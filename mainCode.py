@@ -12,8 +12,8 @@ VERSION = "v17.0"
 URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}/messages"
 
 # Configuración de Google Sheets
-NOMBRE_HOJA = "Ventas 2024"
-JSON_CREDS = 'credenciales.json'
+NOMBRE_HOJA = "Base de datos wt"
+JSON_CREDS = 'sheets.json'
 
 def conectar_sheets():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
