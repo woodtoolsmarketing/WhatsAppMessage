@@ -5,8 +5,8 @@ import time
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN ---
-CLOUD_API_TOKEN = "TU_TOKEN_AQUI"
-PHONE_NUMBER_ID = "TU_ID_AQUI"
+CLOUD_API_TOKEN = "EAANcqeZCuZAM4BQrv8ZBjulKeQ95wVhlmlugMrm5Gkvb5jCZCThZAx0EblclgOuZAGX9ndyKqK8ZAkZAFUauzw5IywZCk8knumuW7yBDXvDrdCDWo12yCAyBjw3yXeyase7gqGR4j4UnZBeZAPlGGxzzGYMF8KKrdE7WZA9ZCXF4PlYpNPxxqRt58dlZApGi1ZCHmqx3vZBu1mZBEpyMLtJrpxfTMxH9YHBbaiSGR4ozCLrFRD3xGrOGmJZC1fshQdQl75llh25VNOU4F1ZBnKVZCRJ1f8spLAdw"
+PHONE_NUMBER_ID = "1007885345737939"
 VERSION = "v17.0"
 URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}/messages"
 
