@@ -15,11 +15,11 @@ JSON_CREDS = 'service_account.json'
 NOMBRE_HOJA = "Base de datos wt"
 
 def conectar_sheets():
-    """Conecta a Google Sheets y devuelve un DataFrame limpio."""
     try:
-        # Autenticación (usando gspread moderno si es posible, o oauth2client como tenías)
-        gc = gspread.service_account(filename=JSON_CREDS)
+        # Esto busca el archivo con las claves de la API, no la lista de clientes
+        gc = gspread.service_account(filename=JSON_CREDS) 
         sh = gc.open(NOMBRE_HOJA)
+        # ... resto del código
         
         # Leer todos los valores brutos
         datos_brutos = sh.sheet1.get_all_values()
@@ -144,7 +144,7 @@ if __name__ == "__main__":
             print(f"Preparando envío a {cliente} (Top compra: {producto} con {cantidad} unidades)...")
             
             # Descomenta para activar el envío real
-            # exito, msg = enviar_mensaje_cloud_api(telefono, cliente, producto)
+            # exito, msg = enviar_mensaje_cloud_api(telefono, cliente, producto) print(f"Estado: {msg}")
             # print(f"Estado: {msg}")
             
             time.sleep(1) # Respetar límites de velocidad de la API
