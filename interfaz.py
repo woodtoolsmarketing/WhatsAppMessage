@@ -1,20 +1,20 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import pandas as pd
 import threading
-import mainCode # Importamos tu archivo de lógica
+import mainCode 
 
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
         self.root.title("WoodTools Marketing Manager")
-        self.root.geometry("1000x600")
+        self.root.geometry("1200x650") # Agrandamos un poco la ventana para que entren las columnas
         
         # Variables de datos
         self.df_original = pd.DataFrame()
         self.df_filtrado = pd.DataFrame()
         
-        # --- MARCO SUPERIOR: CARGA DE DATOS ---
+        # --- MARCO SUPERIOR ---
         frame_top = tk.Frame(root, pady=10)
         frame_top.pack(fill="x")
         
@@ -29,10 +29,10 @@ class WoodToolsApp:
         frame_filtros.pack(fill="x", padx=20, pady=5)
         
         # Filtro Nombre
-        tk.Label(frame_filtros, text="Nombre Cliente:").grid(row=0, column=0, padx=5)
+        tk.Label(frame_filtros, text="Nombre:").grid(row=0, column=0, padx=5)
         self.entry_nombre = tk.Entry(frame_filtros)
         self.entry_nombre.grid(row=0, column=1, padx=5)
-        self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) # Filtrar al escribir
+        self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
         
         # Filtro Ubicación
         tk.Label(frame_filtros, text="Ubicación:").grid(row=0, column=2, padx=5)
@@ -40,50 +40,60 @@ class WoodToolsApp:
         self.entry_ubicacion.grid(row=0, column=3, padx=5)
         self.entry_ubicacion.bind("<KeyRelease>", self.aplicar_filtros)
 
-        # Filtro Herramienta (Producto) - Muestra clientes que compraron X producto
-        tk.Label(frame_filtros, text="Compró Herramienta:").grid(row=0, column=4, padx=5)
+        # Filtro Herramienta
+        tk.Label(frame_filtros, text="Compró:").grid(row=0, column=4, padx=5)
         self.combo_herramientas = ttk.Combobox(frame_filtros, state="readonly")
         self.combo_herramientas.grid(row=0, column=5, padx=5)
         self.combo_herramientas.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
-        btn_limpiar = tk.Button(frame_filtros, text="Limpiar Filtros", command=self.limpiar_filtros)
+        btn_limpiar = tk.Button(frame_filtros, text="Limpiar", command=self.limpiar_filtros)
         btn_limpiar.grid(row=0, column=6, padx=15)
 
-        # --- TABLA DE DATOS (Treeview) ---
+        # --- TABLA DE DATOS (NUEVAS COLUMNAS) ---
         frame_tabla = tk.Frame(root)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
-        # Definir columnas
-        cols = ("Cliente", "Telefono", "Ubicación", "Total Compras")
+        # Definimos las columnas solicitadas
+        cols = ("Cliente", "N° Cliente", "DNI", "Telefono", "Ubicación", "Más Comprado", "Otros Productos")
         self.tree = ttk.Treeview(frame_tabla, columns=cols, show="headings")
         
-        # Configurar encabezados
-        for col in cols:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=150)
+        # Configuración de encabezados y anchos
+        self.tree.heading("Cliente", text="Cliente")
+        self.tree.column("Cliente", width=120)
+        
+        self.tree.heading("N° Cliente", text="N° Cliente")
+        self.tree.column("N° Cliente", width=70)
+
+        self.tree.heading("DNI", text="DNI")
+        self.tree.column("DNI", width=80)
+
+        self.tree.heading("Telefono", text="Teléfono")
+        self.tree.column("Telefono", width=100)
+
+        self.tree.heading("Ubicación", text="Ubicación")
+        self.tree.column("Ubicación", width=100)
+
+        self.tree.heading("Más Comprado", text="⭐ Más Comprado")
+        self.tree.column("Más Comprado", width=120)
+
+        self.tree.heading("Otros Productos", text="📦 Otros Productos")
+        self.tree.column("Otros Productos", width=250)
             
-        # Scrollbar
         scrollbar = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.tree.pack(fill="both", expand=True)
 
-        # --- PANEL DE ACCIÓN (ENVÍO) ---
+        # --- PANEL DE ACCIÓN ---
         frame_accion = tk.Frame(root, pady=20, bg="#f0f0f0")
         frame_accion.pack(fill="x", side="bottom")
         
-        tk.Label(frame_accion, text="Descuento a ofrecer (%):", bg="#f0f0f0").pack(side=tk.LEFT, padx=20)
-        self.entry_descuento = tk.Entry(frame_accion, width=5)
-        self.entry_descuento.pack(side=tk.LEFT)
-        
-        btn_enviar = tk.Button(frame_accion, text="🚀 ENVIAR MENSAJES A LISTA FILTRADA", command=self.confirmar_envio, bg="#2196F3", fg="white", font=("Arial", 11, "bold"))
-        btn_enviar.pack(side=tk.RIGHT, padx=20)
+        btn_enviar = tk.Button(frame_accion, text="🚀 CONFIGURAR DESCUENTO Y ENVIAR", command=self.confirmar_envio, bg="#2196F3", fg="white", font=("Arial", 11, "bold"))
+        btn_enviar.pack(padx=20, pady=10)
 
     def cargar_datos(self):
         self.lbl_status.config(text="Cargando desde Google Sheets...", fg="blue")
         self.root.update_idletasks()
-        
-        # Ejecutar en segundo plano para no congelar la ventana
         threading.Thread(target=self._cargar_datos_thread).start()
 
     def _cargar_datos_thread(self):
@@ -94,14 +104,11 @@ class WoodToolsApp:
                 return
 
             self.df_original = df
-            
-            # Asegurar que existe la columna Ubicación, si no, crearla vacía
             if 'Ubicación' not in self.df_original.columns:
                 self.df_original['Ubicación'] = "No especificado"
 
             self.df_filtrado = df.copy()
             
-            # Cargar herramientas en el combobox dinámicamente
             cols_cliente = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'DNI', 'Ubicación']
             productos = [col for col in self.df_original.columns if col not in cols_cliente]
             self.combo_herramientas['values'] = ["Todos"] + productos
@@ -119,34 +126,57 @@ class WoodToolsApp:
         # Limpiar tabla actual
         for i in self.tree.get_children():
             self.tree.delete(i)
-            
-        # Insertar datos filtrados
+        
+        # Columnas que NO son productos (para excluirlas del cálculo de compras)
+        cols_no_prod = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'DNI', 'Ubicación']
+
         for index, row in self.df_filtrado.iterrows():
-            # Calcular un total de compras simple para mostrar algo interesante
-            # (Opcional)
-            self.tree.insert("", "end", values=(row['Cliente'], row['Numero de Telefono'], row['Ubicación'], "Ver detalle"))
+            # --- Lógica para encontrar qué compró cada uno ---
+            try:
+                # Extraemos solo las columnas de productos para esta fila
+                cols_productos = [c for c in row.index if c not in cols_no_prod]
+                datos_productos = row[cols_productos]
+                
+                # Convertimos a números para poder ordenar
+                datos_productos = pd.to_numeric(datos_productos, errors='coerce').fillna(0)
+                
+                # Filtramos solo lo que compró (mayor a 0) y ordenamos de mayor a menor
+                compras = datos_productos[datos_productos > 0].sort_values(ascending=False)
+                
+                if not compras.empty:
+                    mas_comprado = compras.index[0] # El primero es el mayor
+                    otros = compras.index[1:].tolist() # El resto de la lista
+                    otros_str = ", ".join(otros) if others else "-"
+                else:
+                    mas_comprado = "-"
+                    otros_str = "-"
+            except Exception:
+                mas_comprado = "Error Calc"
+                otros_str = "-"
+
+            # Insertamos la fila en la tabla visual
+            self.tree.insert("", "end", values=(
+                row.get('Cliente', ''), 
+                row.get('Número de cliente', ''), 
+                row.get('DNI', ''), 
+                row.get('Numero de Telefono', ''), 
+                row.get('Ubicación', ''), 
+                mas_comprado, 
+                otros_str
+            ))
 
     def aplicar_filtros(self, event=None):
-        if self.df_original.empty:
-            return
-
+        if self.df_original.empty: return
         nombre = self.entry_nombre.get().lower()
         ubicacion = self.entry_ubicacion.get().lower()
         herramienta = self.combo_herramientas.get()
 
         df = self.df_original.copy()
-
-        # Filtro Nombre
         if nombre:
             df = df[df['Cliente'].str.lower().str.contains(nombre, na=False)]
-        
-        # Filtro Ubicación
         if ubicacion:
             df = df[df['Ubicación'].str.lower().str.contains(ubicacion, na=False)]
-
-        # Filtro Herramienta (Si seleccionó una específica, filtra clientes que compraron > 0)
         if herramienta != "Todos" and herramienta in df.columns:
-            # Convertir a numérico para filtrar
             df[herramienta] = pd.to_numeric(df[herramienta], errors='coerce').fillna(0)
             df = df[df[herramienta] > 0]
 
@@ -165,12 +195,11 @@ class WoodToolsApp:
             messagebox.showwarning("Atención", "No hay clientes en la lista filtrada.")
             return
 
-        descuento = self.entry_descuento.get()
-        if not descuento.isdigit():
-            messagebox.showerror("Error", "Ingrese un porcentaje de descuento válido (solo números).")
-            return
+        descuento = simpledialog.askinteger("Configurar Oferta", "Ingrese el porcentaje de descuento a aplicar (%):", minvalue=1, maxvalue=100)
+        
+        if descuento is None: return 
 
-        confirm = messagebox.askyesno("Confirmar Envío", f"Se enviará mensaje a {len(self.df_filtrado)} clientes.\n¿Está seguro?")
+        confirm = messagebox.askyesno("Confirmar Envío", f"Se enviará mensaje a {len(self.df_filtrado)} clientes con un {descuento}% de descuento.\n¿Está seguro?")
         if confirm:
             self.enviar_mensajes(descuento)
 
@@ -178,19 +207,16 @@ class WoodToolsApp:
         self.lbl_status.config(text="Calculando Top Global...", fg="orange")
         self.root.update()
         
-        # Calcular Top 3 (usando la base TOTAL, no la filtrada, para mantener la lógica global)
         top1, top2, top3 = mainCode.obtener_top_3_globales(self.df_original)
         
         contador_exito = 0
         total = len(self.df_filtrado)
 
-        # Barra de progreso simple en consola o status
         for i, fila in self.df_filtrado.iterrows():
             cliente = fila['Cliente']
             telefono_raw = fila['Numero de Telefono']
             
-            if not telefono_raw:
-                continue
+            if not telefono_raw: continue
 
             telefono = mainCode.formatear_telefono(telefono_raw)
             self.lbl_status.config(text=f"Enviando a {cliente} ({i+1}/{total})...")
@@ -198,10 +224,7 @@ class WoodToolsApp:
             
             exito, msg = mainCode.enviar_mensaje_cloud_api(telefono, top1, descuento, top2, top3)
             
-            if exito:
-                contador_exito += 1
-            
-            # Pausa pequeña para no saturar
+            if exito: contador_exito += 1
             self.root.after(1000) 
 
         messagebox.showinfo("Proceso Terminado", f"Se enviaron {contador_exito} de {total} mensajes correctamente.")
