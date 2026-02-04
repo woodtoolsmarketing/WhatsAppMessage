@@ -57,7 +57,7 @@ class WoodToolsApp:
         frame_tabla = tk.Frame(root)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
-        # --- CAMBIO AQUÍ: DNI -> CUIT en las columnas ---
+        # --- COLUMNAS (Con CUIT) ---
         cols = ("Cliente", "N° Cliente", "CUIT", "Telefono", "Ubicación", "Más Comprado", "Otros Productos")
         self.tree = ttk.Treeview(frame_tabla, columns=cols, show="headings")
         
@@ -116,7 +116,7 @@ class WoodToolsApp:
             if 'Ubicación' not in self.df_original.columns: self.df_original['Ubicación'] = "No especificado"
             self.df_filtrado = df.copy()
             
-            # --- CAMBIO AQUÍ: DNI -> CUIT en exclusión de columnas ---
+            # --- EXCLUIR COLUMNAS (Con CUIT) ---
             cols_no_prod = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'CUIT', 'Ubicación']
             
             productos = [col for col in self.df_original.columns if col not in cols_no_prod]
@@ -133,7 +133,6 @@ class WoodToolsApp:
     def actualizar_tabla(self):
         for i in self.tree.get_children(): self.tree.delete(i)
         
-        # --- CAMBIO AQUÍ: DNI -> CUIT en exclusión ---
         cols_no_prod = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'CUIT', 'Ubicación']
         
         for index, row in self.df_filtrado.iterrows():
@@ -144,13 +143,13 @@ class WoodToolsApp:
                 if not compras.empty:
                     mas_comprado = compras.index[0]
                     otros = compras.index[1:].tolist()
-                    otros_str = ", ".join(otros) if others else "-"
+                    # --- CORRECCIÓN AQUÍ: 'if otros' en vez de 'if others' ---
+                    otros_str = ", ".join(otros) if otros else "-"
                 else:
                     mas_comprado = "-"
                     otros_str = "-"
             except: mas_comprado, otros_str = "-", "-"
             
-            # --- CAMBIO AQUÍ: Obtenemos 'CUIT' para mostrar en la tabla ---
             self.tree.insert("", "end", values=(
                 row.get('Cliente',''), 
                 row.get('Número de cliente',''), 
