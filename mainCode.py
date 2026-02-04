@@ -23,12 +23,14 @@ def conectar_sheets():
         df = pd.DataFrame(data, columns=headers)
         return df
     except Exception as e:
-        return pd.DataFrame() # Retorna vacío si hay error
+        return pd.DataFrame() 
 
 def obtener_top_3_globales(df):
     """Calcula los 3 productos más vendidos globalmente."""
-    # Agregamos 'Ubicación' a la lista de columnas que NO son productos
-    cols_cliente = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'DNI', 'Ubicación']
+    # --- CAMBIO AQUÍ: Se reemplazó 'DNI' por 'CUIT' ---
+    cols_cliente = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'CUIT', 'Ubicación']
+    
+    # Detectar productos (todo lo que NO sea info de cliente)
     cols_productos = [col for col in df.columns if col not in cols_cliente and col != '']
     
     df_calc = df.copy()
