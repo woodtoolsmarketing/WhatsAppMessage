@@ -18,3 +18,4 @@ pip install pandas gspread requests oauth2client
 pip install -r requirements.txt
 source venv/Scripts/activate 
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Para actualizar poner git pull
