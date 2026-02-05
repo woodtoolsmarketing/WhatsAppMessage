@@ -3,6 +3,14 @@ Este readme es para ir anotando todas las modificaciones por día que se le fuer
 
 
 Codigos necesarios para iniciar e instalar el programa 
+instalar python en el pc
+instalar las extenciones de python en el vscode
+introducir las siguientes credenciales
+python -m venv venv
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force; .\venv\Scripts\Activate (en caso de emergencia)
+pip install -r requirements.txt
+git config --global user.name "woodtoolsmarketing"
+git config --global user.email "woodtoolsmarketing@gmail.com"
 pip install pyinstaller
 pip install Pillow
 pyinstaller --noconsole --onefile --add-data "Imagenes/logo.png;Imagenes" interfaz.py
