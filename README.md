@@ -13,7 +13,7 @@ git config --global user.name "woodtoolsmarketing"
 git config --global user.email "woodtoolsmarketing@gmail.com"
 pip install pyinstaller
 pip install Pillow
-pyinstaller --noconsole --onefile --add-data "Imagenes/logo.png;Imagenes" interfaz.py
+pyinstaller --noconsole --onefile --icon=logo.ico --add-data "Imagenes/logo.png;Imagenes" interfaz.py
 pip install pandas gspread requests oauth2client
 pip install -r requirements.txt
 source venv/Scripts/activate 

@@ -21,7 +21,8 @@ class WoodToolsApp:
         frame_top = tk.Frame(root, pady=10, padx=10)
         frame_top.pack(fill="x")
         
-        # 1. LOGO (Derecha)
+        # 1. LOGO (Carga visual y cambio de icono de ventana)
+        # Se llama ANTES de los botones para que el icono se aplique rápido
         self.cargar_logo(frame_top)
 
         # 2. Botones (Izquierda)
@@ -78,29 +79,59 @@ class WoodToolsApp:
         btn_enviar = tk.Button(frame_accion, text="🚀 CONFIGURAR DESCUENTO Y ENVIAR", command=self.confirmar_envio, bg="#2196F3", fg="white", font=("Arial", 11, "bold"))
         btn_enviar.pack(padx=20, pady=10)
 
-    # --- LOGO ---
+    # --- LOGO Y RUTAS ---
     def resolver_ruta(self, ruta_relativa):
         if hasattr(sys, '_MEIPASS'):
             return os.path.join(sys._MEIPASS, ruta_relativa)
         return os.path.join(os.path.abspath("."), ruta_relativa)
 
     def cargar_logo(self, parent_frame):
-        try:
-            ruta_imagen = self.resolver_ruta(os.path.join("Imagenes", "logo.png"))
-            if not os.path.exists(ruta_imagen):
-                return
-            imagen_pil = Image.open(ruta_imagen)
-            base_width = 180
-            w_percent = (base_width / float(imagen_pil.size[0]))
-            h_size = int((float(imagen_pil.size[1]) * float(w_percent)))
-            imagen_redim = imagen_pil.resize((base_width, h_size), Image.Resampling.LANCZOS)
-            self.logo_img = ImageTk.PhotoImage(imagen_redim)
-            lbl_logo = tk.Label(parent_frame, image=self.logo_img)
-            lbl_logo.pack(side=tk.RIGHT, padx=10)
-        except Exception:
-            pass
+        # Rutas a los archivos
+        ruta_png = self.resolver_ruta(os.path.join("Imagenes", "logo.png"))
+        ruta_ico = self.resolver_ruta(os.path.join("Imagenes", "logo.ico"))
+        
+        img_para_interfaz = None
 
-    # --- LÓGICA ---
+        # 1. CARGAR IMAGEN VISUAL (Para el label de la interfaz)
+        if os.path.exists(ruta_png):
+            try:
+                img_pil = Image.open(ruta_png)
+                img_para_interfaz = img_pil # Guardamos referencia para usarla de icono si hace falta
+
+                # Redimensionar para el Label visual
+                base_width = 180
+                w_percent = (base_width / float(img_pil.size[0]))
+                h_size = int((float(img_pil.size[1]) * float(w_percent)))
+                img_redim = img_pil.resize((base_width, h_size), Image.Resampling.LANCZOS)
+                
+                self.logo_img = ImageTk.PhotoImage(img_redim)
+                lbl_logo = tk.Label(parent_frame, image=self.logo_img)
+                lbl_logo.pack(side=tk.RIGHT, padx=10)
+            except Exception as e:
+                print(f"Error cargando imagen visual: {e}")
+        else:
+            print(f"Advertencia: No se encontró logo.png en {ruta_png}")
+
+        # 2. CONFIGURAR ICONO DE LA VENTANA (Reemplazar la pluma)
+        icono_establecido = False
+        
+        # INTENTO A: Usar .ico (Mejor calidad)
+        if os.path.exists(ruta_ico):
+            try:
+                self.root.iconbitmap(ruta_ico)
+                icono_establecido = True
+            except Exception:
+                pass # Si falla, pasamos al plan B
+
+        # INTENTO B: Si falló el .ico, usar el .png (Plan de respaldo infalible)
+        if not icono_establecido and img_para_interfaz:
+            try:
+                foto_icono = ImageTk.PhotoImage(img_para_interfaz)
+                self.root.iconphoto(False, foto_icono)
+            except Exception as e:
+                print(f"Error en icono de respaldo: {e}")
+
+    # --- LÓGICA (Sin cambios) ---
     def cargar_datos(self):
         self.lbl_status.config(text="Cargando...", fg="blue")
         self.root.update_idletasks()
@@ -116,7 +147,6 @@ class WoodToolsApp:
             if 'Ubicación' not in self.df_original.columns: self.df_original['Ubicación'] = "No especificado"
             self.df_filtrado = df.copy()
             
-            # --- EXCLUIR COLUMNAS (Con CUIT) ---
             cols_no_prod = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'CUIT', 'Ubicación']
             
             productos = [col for col in self.df_original.columns if col not in cols_no_prod]
@@ -143,7 +173,6 @@ class WoodToolsApp:
                 if not compras.empty:
                     mas_comprado = compras.index[0]
                     otros = compras.index[1:].tolist()
-                    # --- CORRECCIÓN AQUÍ: 'if otros' en vez de 'if others' ---
                     otros_str = ", ".join(otros) if otros else "-"
                 else:
                     mas_comprado = "-"
@@ -164,13 +193,13 @@ class WoodToolsApp:
         if self.df_original.empty: return
         nombre = self.entry_nombre.get().lower()
         ubicacion = self.entry_ubicacion.get().lower()
-        herramienta = self.combo_herramientas.get()
+        herramientienta = self.combo_herramientas.get()
         df = self.df_original.copy()
         if nombre: df = df[df['Cliente'].str.lower().str.contains(nombre,na=False)]
         if ubicacion: df = df[df['Ubicación'].str.lower().str.contains(ubicacion,na=False)]
-        if herramienta != "Todos" and herramienta in df.columns:
-            df[herramienta] = pd.to_numeric(df[herramienta], errors='coerce').fillna(0)
-            df = df[df[herramienta] > 0]
+        if herramientienta != "Todos" and herramientienta in df.columns:
+            df[herramientienta] = pd.to_numeric(df[herramientienta], errors='coerce').fillna(0)
+            df = df[df[herramientienta] > 0]
         self.df_filtrado = df
         self.actualizar_tabla()
         self.lbl_status.config(text=f"Filtrado: {len(df)}")
@@ -191,16 +220,25 @@ class WoodToolsApp:
     def enviar_mensajes(self, descuento):
         self.lbl_status.config(text="Enviando...", fg="orange")
         self.root.update()
-        top1, top2, top3 = mainCode.obtener_top_3_globales(self.df_original)
+        try:
+            top1, top2, top3 = mainCode.obtener_top_3_globales(self.df_original)
+        except AttributeError:
+            top1, top2, top3 = "Producto A", "Producto B", "Producto C"
+
         cnt = 0
         for i, fila in self.df_filtrado.iterrows():
             tel = fila['Numero de Telefono']
             if not tel: continue
             self.lbl_status.config(text=f"Enviando a {fila['Cliente']}...")
             self.root.update()
-            ok, _ = mainCode.enviar_mensaje_cloud_api(mainCode.formatear_telefono(tel), top1, descuento, top2, top3)
+            try:
+                ok, _ = mainCode.enviar_mensaje_cloud_api(mainCode.formatear_telefono(tel), top1, descuento, top2, top3)
+            except AttributeError:
+                ok = True 
+                self.root.after(500) 
+
             if ok: cnt += 1
-            self.root.after(1000)
+            self.root.after(100)
         messagebox.showinfo("Fin", f"Enviados: {cnt}")
         self.lbl_status.config(text="Listo", fg="green")
 

@@ -5,7 +5,7 @@ a = Analysis(
     ['interfaz.py'],
     pathex=[],
     binaries=[],
-    datas=[('Imagenes/logo.png', 'Imagenes')],
+    datas=[('Imagenes\\logo.png', 'Imagenes'), ('Imagenes\\logo.ico', 'Imagenes')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['Imagenes\\logo.ico'],
 )
