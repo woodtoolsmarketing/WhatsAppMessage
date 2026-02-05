@@ -6,3 +6,4 @@ Codigos necesarios para iniciar e instalar el programa
 pip install pyinstaller
 pip install Pillow
 pyinstaller --noconsole --onefile --add-data "Imagenes/logo.png;Imagenes" interfaz.py
+pip install pandas gspread requests oauth2client
