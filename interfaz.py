@@ -5,6 +5,7 @@ import pandas as pd
 import threading
 import os
 import sys 
+import time  # <--- AGREGADO: Necesario para pausar entre envíos
 import mainCode 
 
 class WoodToolsApp:
@@ -22,7 +23,6 @@ class WoodToolsApp:
         frame_top.pack(fill="x")
         
         # 1. LOGO (Carga visual y cambio de icono de ventana)
-        # Se llama ANTES de los botones para que el icono se aplique rápido
         self.cargar_logo(frame_top)
 
         # 2. Botones (Izquierda)
@@ -92,11 +92,11 @@ class WoodToolsApp:
         
         img_para_interfaz = None
 
-        # 1. CARGAR IMAGEN VISUAL (Para el label de la interfaz)
+        # 1. CARGAR IMAGEN VISUAL
         if os.path.exists(ruta_png):
             try:
                 img_pil = Image.open(ruta_png)
-                img_para_interfaz = img_pil # Guardamos referencia para usarla de icono si hace falta
+                img_para_interfaz = img_pil 
 
                 # Redimensionar para el Label visual
                 base_width = 180
@@ -112,18 +112,18 @@ class WoodToolsApp:
         else:
             print(f"Advertencia: No se encontró logo.png en {ruta_png}")
 
-        # 2. CONFIGURAR ICONO DE LA VENTANA (Reemplazar la pluma)
+        # 2. CONFIGURAR ICONO DE LA VENTANA
         icono_establecido = False
         
-        # INTENTO A: Usar .ico (Mejor calidad)
+        # INTENTO A: Usar .ico
         if os.path.exists(ruta_ico):
             try:
                 self.root.iconbitmap(ruta_ico)
                 icono_establecido = True
             except Exception:
-                pass # Si falla, pasamos al plan B
+                pass 
 
-        # INTENTO B: Si falló el .ico, usar el .png (Plan de respaldo infalible)
+        # INTENTO B: Si falló el .ico, usar el .png
         if not icono_establecido and img_para_interfaz:
             try:
                 foto_icono = ImageTk.PhotoImage(img_para_interfaz)
@@ -131,7 +131,7 @@ class WoodToolsApp:
             except Exception as e:
                 print(f"Error en icono de respaldo: {e}")
 
-    # --- LÓGICA (Sin cambios) ---
+    # --- LÓGICA ---
     def cargar_datos(self):
         self.lbl_status.config(text="Cargando...", fg="blue")
         self.root.update_idletasks()
@@ -141,7 +141,7 @@ class WoodToolsApp:
         try:
             df = mainCode.conectar_sheets()
             if df.empty:
-                self.actualizar_status("Error datos", "red")
+                self.actualizar_status("Error datos o Hoja vacía", "red")
                 return
             self.df_original = df
             if 'Ubicación' not in self.df_original.columns: self.df_original['Ubicación'] = "No especificado"
@@ -214,32 +214,57 @@ class WoodToolsApp:
         if self.df_filtrado.empty: return messagebox.showwarning("Atención", "Lista vacía")
         descuento = simpledialog.askinteger("Oferta", "Descuento (%):", minvalue=1, maxvalue=100)
         if descuento is None: return 
-        if messagebox.askyesno("Confirmar", f"Enviar a {len(self.df_filtrado)} clientes con {descuento}% off?"):
+        # Modificación visual para la confirmación
+        if messagebox.askyesno("Confirmar", f"Enviar a {len(self.df_filtrado)} clientes con {descuento}% OFF?"):
             self.enviar_mensajes(descuento)
 
     def enviar_mensajes(self, descuento):
-        self.lbl_status.config(text="Enviando...", fg="orange")
+        self.lbl_status.config(text="Iniciando envíos...", fg="orange")
         self.root.update()
+        
         try:
             top1, top2, top3 = mainCode.obtener_top_3_globales(self.df_original)
-        except AttributeError:
+        except Exception:
             top1, top2, top3 = "Producto A", "Producto B", "Producto C"
 
+        # --- AJUSTE NECESARIO: Formato de texto ---
+        # Convertimos el número 15 en "15% OFF" para que se vea bien en WhatsApp
+        texto_descuento = f"{descuento}% OFF"
+
         cnt = 0
+        total = len(self.df_filtrado)
+        
         for i, fila in self.df_filtrado.iterrows():
             tel = fila['Numero de Telefono']
+            
             if not tel: continue
-            self.lbl_status.config(text=f"Enviando a {fila['Cliente']}...")
+            
+            # Feedback visual
+            nombre = fila.get('Cliente', 'Cliente')
+            self.lbl_status.config(text=f"Enviando ({cnt+1}/{total}): {nombre}...")
             self.root.update()
+            
             try:
-                ok, _ = mainCode.enviar_mensaje_cloud_api(mainCode.formatear_telefono(tel), top1, descuento, top2, top3)
-            except AttributeError:
-                ok = True 
-                self.root.after(500) 
+                # Usamos texto_descuento en vez de descuento puro
+                ok, respuesta = mainCode.enviar_mensaje_cloud_api(
+                    mainCode.formatear_telefono(tel), 
+                    top1, 
+                    texto_descuento, 
+                    top2, 
+                    top3
+                )
+            except Exception as e:
+                ok = False 
+                print(f"Error local: {e}")
 
-            if ok: cnt += 1
-            self.root.after(100)
-        messagebox.showinfo("Fin", f"Enviados: {cnt}")
+            if ok: 
+                cnt += 1
+            
+            # --- AJUSTE NECESARIO: Pausa Anti-Spam ---
+            # Esperar 1 segundo entre mensajes para evitar bloqueo de Meta
+            time.sleep(1) 
+
+        messagebox.showinfo("Fin", f"Proceso finalizado.\nEnviados con éxito: {cnt}")
         self.lbl_status.config(text="Listo", fg="green")
 
 if __name__ == "__main__":
