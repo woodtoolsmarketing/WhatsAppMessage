@@ -26,9 +26,8 @@ class WoodToolsApp:
         frame_top = tk.Frame(root, pady=10, padx=10, bg="#e0e0e0")
         frame_top.pack(fill="x")
         
-        self.cargar_logo(frame_top) # Carga logo visual
+        self.cargar_logo(frame_top)
 
-        # CAMBIO: Texto del botón
         btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base de Datos Interna", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
         
@@ -39,17 +38,20 @@ class WoodToolsApp:
         frame_filtros = tk.LabelFrame(root, text="Filtros de Audiencia", padx=10, pady=10, font=("Segoe UI", 10, "bold"))
         frame_filtros.pack(fill="x", padx=20, pady=5)
         
-        tk.Label(frame_filtros, text="Nombre Cliente:").grid(row=0, column=0, padx=5)
+        # Filtro Nombre
+        tk.Label(frame_filtros, text="Nombre:").grid(row=0, column=0, padx=5)
         self.entry_nombre = tk.Entry(frame_filtros)
         self.entry_nombre.grid(row=0, column=1, padx=5)
         self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
         
-        tk.Label(frame_filtros, text="Ubicación/Zona:").grid(row=0, column=2, padx=5)
-        self.entry_ubicacion = tk.Entry(frame_filtros)
-        self.entry_ubicacion.grid(row=0, column=3, padx=5)
-        self.entry_ubicacion.bind("<KeyRelease>", self.aplicar_filtros)
+        # Filtro Zona
+        tk.Label(frame_filtros, text="Zona:").grid(row=0, column=2, padx=5)
+        self.combo_zona = ttk.Combobox(frame_filtros, state="readonly", width=10)
+        self.combo_zona.grid(row=0, column=3, padx=5)
+        self.combo_zona.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
-        tk.Label(frame_filtros, text="Producto Comprado:").grid(row=0, column=4, padx=5)
+        # Filtro Producto
+        tk.Label(frame_filtros, text="Producto Comprado (>0):").grid(row=0, column=4, padx=5)
         self.combo_herramientas = ttk.Combobox(frame_filtros, state="readonly")
         self.combo_herramientas.grid(row=0, column=5, padx=5)
         self.combo_herramientas.bind("<<ComboboxSelected>>", self.aplicar_filtros)
@@ -57,14 +59,13 @@ class WoodToolsApp:
         btn_limpiar = tk.Button(frame_filtros, text="Limpiar Filtros", command=self.limpiar_filtros)
         btn_limpiar.grid(row=0, column=6, padx=15)
 
-        self.lbl_conteo = tk.Label(frame_filtros, text="Registros filtrados: 0", font=("Segoe UI", 9, "bold"), fg="#2196F3")
+        self.lbl_conteo = tk.Label(frame_filtros, text="Registros: 0", font=("Segoe UI", 9, "bold"), fg="#2196F3")
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
         # --- 3. CONFIGURACIÓN DE CAMPAÑA ---
         frame_campana = tk.LabelFrame(root, text="Configuración del Mensaje", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 10, "bold"))
         frame_campana.pack(fill="x", padx=20, pady=10)
 
-        # -- Selector Tipo de Mensaje --
         tk.Label(frame_campana, text="Tipo de Mensaje:", bg="#f5f5f5").grid(row=0, column=0, sticky="w")
         self.tipo_mensaje_var = tk.StringVar(value="Promociones")
         opciones_mensaje = ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado"]
@@ -72,16 +73,12 @@ class WoodToolsApp:
         self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.combo_tipo_mensaje.bind("<<ComboboxSelected>>", self.actualizar_inputs_dinamicos)
 
-        # -- Selector Vendedor (Link) --
         tk.Label(frame_campana, text="Vendedor (Link WhatsApp):", bg="#f5f5f5").grid(row=0, column=1, sticky="w", padx=20)
-        
-        # Obtenemos las claves del diccionario del Backend
         self.opciones_vendedores_keys = list(mainCode.DB_VENDEDORES.keys())
         self.combo_vendedor = ttk.Combobox(frame_campana, values=self.opciones_vendedores_keys, state="readonly", width=15)
         self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5, sticky="w")
         if self.opciones_vendedores_keys: self.combo_vendedor.current(0)
 
-        # -- Área Dinámica --
         self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5", bd=1, relief="solid")
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=30, sticky="nesw")
 
@@ -96,12 +93,13 @@ class WoodToolsApp:
         frame_tabla = tk.Frame(root)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
         
-        cols = ("Cliente", "Telefono", "Ubicación", "Prod. Favorito", "Prod. Secundario")
+        # Agregamos columna ZONA
+        cols = ("Cliente", "Telefono", "Zona", "Prod. Favorito", "Prod. Secundario")
         self.tree = ttk.Treeview(frame_tabla, columns=cols, show="headings")
         
         self.tree.heading("Cliente", text="Cliente"); self.tree.column("Cliente", width=200)
         self.tree.heading("Telefono", text="Teléfono"); self.tree.column("Telefono", width=120)
-        self.tree.heading("Ubicación", text="Ubicación"); self.tree.column("Ubicación", width=150)
+        self.tree.heading("Zona", text="Zona"); self.tree.column("Zona", width=80)
         self.tree.heading("Prod. Favorito", text="Prod. Favorito"); self.tree.column("Prod. Favorito", width=200)
         self.tree.heading("Prod. Secundario", text="Prod. Secundario"); self.tree.column("Prod. Secundario", width=200)
         
@@ -119,7 +117,6 @@ class WoodToolsApp:
 
         btn_enviar = tk.Button(frame_accion, text="🚀 ENVIAR MENSAJES AHORA", command=self.iniciar_envio, bg="#2196F3", fg="white", font=("Segoe UI", 12, "bold"), padx=30, pady=10)
         btn_enviar.pack(pady=10)
-
 
     # =========================================================================
     # LÓGICA
@@ -166,31 +163,35 @@ class WoodToolsApp:
                 self.lbl_nombre_imagen.config(text=os.path.basename(ruta), fg="green")
 
     def cargar_datos(self):
-        # CAMBIO: Texto informativo
         self.lbl_status_db.config(text="Leyendo diccionario interno...", fg="blue")
         threading.Thread(target=self._hilo_carga).start()
 
     def _hilo_carga(self):
-        df = mainCode.conectar_sheets() # Llama al backend que lee el diccionario
-        
+        df = mainCode.conectar_sheets() 
         if df.empty:
             self.root.after(0, lambda: self.lbl_status_db.config(text="Error: Diccionario vacío", fg="red"))
             return
         
         self.df_original = df
         
-        # CAMBIO: Manejo de ubicación para el diccionario nuevo
-        if 'Ubicación' not in self.df_original.columns:
-            if 'Zona' in self.df_original.columns:
-                self.df_original['Ubicación'] = "Zona " + self.df_original['Zona'].astype(str)
-            else:
-                self.df_original['Ubicación'] = "Sin Ubicación"
+        # Aseguramos columna ZONA
+        if 'Zona' not in self.df_original.columns:
+            self.df_original['Zona'] = "N/A"
+        else:
+            # Convertimos a string para el filtro
+            self.df_original['Zona'] = self.df_original['Zona'].astype(str)
 
         self.df_filtrado = df.copy()
 
+        # Llenar combo de PRODUCTOS
         cols_prod = mainCode.identificar_cols_productos(df)
         self.combo_herramientas['values'] = ["Todos"] + cols_prod
         self.combo_herramientas.current(0)
+        
+        # Llenar combo de ZONAS (Valores únicos ordenados)
+        zonas_unicas = sorted(self.df_original['Zona'].unique().tolist())
+        self.combo_zona['values'] = ["Todas"] + zonas_unicas
+        self.combo_zona.current(0)
         
         self.root.after(0, self.actualizar_tabla)
         self.root.after(0, lambda: self.lbl_status_db.config(text=f"Base cargada: {len(df)} registros", fg="green"))
@@ -203,10 +204,10 @@ class WoodToolsApp:
         for index, row in self.df_filtrado.iterrows():
             nombre = row.get('Cliente', '')
             tel = row.get('Numero de Telefono', '')
-            ubic = row.get('Ubicación', '')
+            zona = row.get('Zona', '')
             
             p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
-            self.tree.insert("", "end", values=(nombre, tel, ubic, p1, p2))
+            self.tree.insert("", "end", values=(nombre, tel, zona, p1, p2))
             
         self.lbl_conteo.config(text=f"Registros filtrados: {len(self.df_filtrado)}")
 
@@ -214,15 +215,24 @@ class WoodToolsApp:
         if self.df_original.empty: return
         
         nom = self.entry_nombre.get().lower()
-        ubi = self.entry_ubicacion.get().lower()
+        zona_sel = self.combo_zona.get()
         prod = self.combo_herramientas.get()
         
         df = self.df_original.copy()
         
-        if nom: df = df[df['Cliente'].str.lower().str.contains(nom, na=False)]
-        if ubi: df = df[df['Ubicación'].str.lower().str.contains(ubi, na=False)]
+        # 1. Filtro Nombre
+        if nom: 
+            df = df[df['Cliente'].str.lower().str.contains(nom, na=False)]
+        
+        # 2. Filtro Zona
+        if zona_sel != "Todas":
+            df = df[df['Zona'] == zona_sel]
+        
+        # 3. Filtro Producto (ROBUSTO)
         if prod != "Todos":
+            # Convertimos a numérico, los errores (texto) se vuelven NaN y luego 0
             df[prod] = pd.to_numeric(df[prod], errors='coerce').fillna(0)
+            # Filtramos solo los mayores a 0
             df = df[df[prod] > 0]
             
         self.df_filtrado = df
@@ -230,7 +240,7 @@ class WoodToolsApp:
 
     def limpiar_filtros(self):
         self.entry_nombre.delete(0, tk.END)
-        self.entry_ubicacion.delete(0, tk.END)
+        self.combo_zona.current(0)
         self.combo_herramientas.current(0)
         self.aplicar_filtros()
 
