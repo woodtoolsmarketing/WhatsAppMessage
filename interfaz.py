@@ -50,8 +50,9 @@ class WoodToolsApp:
         self.combo_zona.grid(row=0, column=3, padx=5)
         self.combo_zona.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
-        # Filtro Producto
-        tk.Label(frame_filtros, text="Producto Comprado (>0):").grid(row=0, column=4, padx=5)
+        # Filtro Producto Favorito
+        # AHORA ESTE FILTRO BUSCA POR "PRODUCTO FAVORITO" REAL
+        tk.Label(frame_filtros, text="Su Favorito es:").grid(row=0, column=4, padx=5)
         self.combo_herramientas = ttk.Combobox(frame_filtros, state="readonly")
         self.combo_herramientas.grid(row=0, column=5, padx=5)
         self.combo_herramientas.bind("<<ComboboxSelected>>", self.aplicar_filtros)
@@ -93,7 +94,6 @@ class WoodToolsApp:
         frame_tabla = tk.Frame(root)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
         
-        # Agregamos columna ZONA
         cols = ("Cliente", "Telefono", "Zona", "Prod. Favorito", "Prod. Secundario")
         self.tree = ttk.Treeview(frame_tabla, columns=cols, show="headings")
         
@@ -153,14 +153,17 @@ class WoodToolsApp:
     def seleccionar_imagen(self):
         ruta = filedialog.askopenfilename(title="Seleccionar Imagen", filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
         if ruta:
-            ext = os.path.splitext(ruta)[1].lower()
+            # CORRECCIÓN DE IMAGEN: Normalizar ruta para Windows
+            ruta_norm = os.path.normpath(ruta)
+            
+            ext = os.path.splitext(ruta_norm)[1].lower()
             if ext not in ['.jpg', '.jpeg', '.png']:
                 messagebox.showerror("Error", "Solo JPG o PNG.")
                 self.ruta_imagen_seleccionada = None
                 self.lbl_nombre_imagen.config(text="Formato inválido", fg="red")
             else:
-                self.ruta_imagen_seleccionada = ruta
-                self.lbl_nombre_imagen.config(text=os.path.basename(ruta), fg="green")
+                self.ruta_imagen_seleccionada = ruta_norm
+                self.lbl_nombre_imagen.config(text=os.path.basename(ruta_norm), fg="green")
 
     def cargar_datos(self):
         self.lbl_status_db.config(text="Leyendo diccionario interno...", fg="blue")
@@ -172,23 +175,35 @@ class WoodToolsApp:
             self.root.after(0, lambda: self.lbl_status_db.config(text="Error: Diccionario vacío", fg="red"))
             return
         
-        self.df_original = df
-        
-        # Aseguramos columna ZONA
-        if 'Zona' not in self.df_original.columns:
-            self.df_original['Zona'] = "N/A"
-        else:
-            # Convertimos a string para el filtro
-            self.df_original['Zona'] = self.df_original['Zona'].astype(str)
+        # 1. Normalizar Zona
+        if 'Zona' not in df.columns: df['Zona'] = "N/A"
+        else: df['Zona'] = df['Zona'].astype(str)
 
+        # 2. PRE-CALCULAR FAVORITOS (Para poder filtrar por "Favorito")
+        # Aquí calculamos qué es lo que más compró cada uno y lo guardamos en una columna nueva
+        cols_prod = mainCode.identificar_cols_productos(df)
+        
+        list_favoritos = []
+        list_secundarios = []
+        
+        for index, row in df.iterrows():
+            # Usamos la lógica de mainCode para sacar el #1
+            p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
+            list_favoritos.append(p1)
+            list_secundarios.append(p2)
+        
+        # Agregamos estas columnas "ocultas" al DataFrame para filtrar después
+        df['Calculated_Fav'] = list_favoritos
+        df['Calculated_Sec'] = list_secundarios
+        
+        self.df_original = df
         self.df_filtrado = df.copy()
 
         # Llenar combo de PRODUCTOS
-        cols_prod = mainCode.identificar_cols_productos(df)
         self.combo_herramientas['values'] = ["Todos"] + cols_prod
         self.combo_herramientas.current(0)
         
-        # Llenar combo de ZONAS (Valores únicos ordenados)
+        # Llenar combo de ZONAS
         zonas_unicas = sorted(self.df_original['Zona'].unique().tolist())
         self.combo_zona['values'] = ["Todas"] + zonas_unicas
         self.combo_zona.current(0)
@@ -199,14 +214,14 @@ class WoodToolsApp:
     def actualizar_tabla(self):
         for i in self.tree.get_children(): self.tree.delete(i)
         
-        cols_prod = mainCode.identificar_cols_productos(self.df_original)
-        
         for index, row in self.df_filtrado.iterrows():
             nombre = row.get('Cliente', '')
             tel = row.get('Numero de Telefono', '')
             zona = row.get('Zona', '')
+            # Usamos los pre-calculados para mostrar
+            p1 = row.get('Calculated_Fav', '-')
+            p2 = row.get('Calculated_Sec', '-')
             
-            p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
             self.tree.insert("", "end", values=(nombre, tel, zona, p1, p2))
             
         self.lbl_conteo.config(text=f"Registros filtrados: {len(self.df_filtrado)}")
@@ -216,7 +231,7 @@ class WoodToolsApp:
         
         nom = self.entry_nombre.get().lower()
         zona_sel = self.combo_zona.get()
-        prod = self.combo_herramientas.get()
+        prod_sel = self.combo_herramientas.get()
         
         df = self.df_original.copy()
         
@@ -228,12 +243,10 @@ class WoodToolsApp:
         if zona_sel != "Todas":
             df = df[df['Zona'] == zona_sel]
         
-        # 3. Filtro Producto (ROBUSTO)
-        if prod != "Todos":
-            # Convertimos a numérico, los errores (texto) se vuelven NaN y luego 0
-            df[prod] = pd.to_numeric(df[prod], errors='coerce').fillna(0)
-            # Filtramos solo los mayores a 0
-            df = df[df[prod] > 0]
+        # 3. Filtro Producto Favorito (CORREGIDO)
+        # Ahora comparamos contra la columna pre-calculada 'Calculated_Fav'
+        if prod_sel != "Todos":
+            df = df[df['Calculated_Fav'] == prod_sel]
             
         self.df_filtrado = df
         self.actualizar_tabla()
@@ -283,6 +296,7 @@ class WoodToolsApp:
                 messagebox.showerror("Error Imagen", "Debes seleccionar una imagen válida.")
                 return
             params['texto'] = texto
+            # Usamos la ruta limpia
             params['ruta_imagen'] = self.ruta_imagen_seleccionada
 
         if not messagebox.askyesno("CONFIRMAR ENVÍO MASIVO", f"Vas a enviar '{tipo}' a {len(self.df_filtrado)} contactos.\n\n¿Estás seguro?"):
@@ -296,9 +310,21 @@ class WoodToolsApp:
         media_id = None
         if tipo == "Personalizado":
             self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
-            media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
+            
+            # CORRECCIÓN: Validación de archivo antes de llamar a la API
+            if not os.path.exists(params['ruta_imagen']):
+                self.root.after(0, lambda: messagebox.showerror("Error Archivo", "El archivo de imagen no se encuentra."))
+                self.lbl_progreso.config(text="Error: Archivo no encontrado", fg="red")
+                return
+
+            try:
+                media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
+            except Exception as e:
+                print(f"Excepción subiendo imagen: {e}")
+                media_id = None
+
             if not media_id:
-                self.root.after(0, lambda: messagebox.showerror("Error API", "No se pudo subir la imagen."))
+                self.root.after(0, lambda: messagebox.showerror("Error API", "Fallo al subir la imagen a WhatsApp.\nRevisa el Token o la conexión."))
                 self.lbl_progreso.config(text="Error subida imagen.", fg="red")
                 return
 
@@ -306,7 +332,6 @@ class WoodToolsApp:
         if tipo == "Promociones":
             top_global_p1, top_global_p2, top_global_p3 = mainCode.obtener_top_3_globales(self.df_original)
 
-        cols_prod = mainCode.identificar_cols_productos(self.df_original)
         total = len(self.df_filtrado)
         ok_count = 0
         err_count = 0
@@ -320,10 +345,13 @@ class WoodToolsApp:
 
             tel_fmt = mainCode.formatear_telefono(tel_raw)
 
+            # Usamos los pre-calculados del DF para asegurar consistencia
+            p1 = row.get('Calculated_Fav', 'Productos')
+            p2 = row.get('Calculated_Sec', 'Ofertas')
+            
             prods_str = ""
             if tipo == "Promociones": prods_str = f"{top_global_p1}, {top_global_p2}, {top_global_p3}"
             elif tipo in ["Rescate (Te extrañamos)", "Gira Vendedor"]:
-                p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
                 prods_str = f"{p1} y {p2}"
             else: prods_str = "la promo enviada"
             
@@ -335,10 +363,8 @@ class WoodToolsApp:
             if tipo == "Promociones":
                 exito, msg = mainCode.enviar_promocion(tel_fmt, top_global_p1, top_global_p2, top_global_p3, link_footer)
             elif tipo == "Rescate (Te extrañamos)":
-                p1, _ = mainCode.obtener_top_personalizados(row, cols_prod)
                 exito, msg = mainCode.enviar_rescate(tel_fmt, nombre, p1, link_footer)
             elif tipo == "Gira Vendedor":
-                p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
                 exito, msg = mainCode.enviar_gira(tel_fmt, params['nombre_vendedor'], p1, p2, link_footer)
             elif tipo == "Personalizado":
                 exito, msg = mainCode.enviar_personalizado(tel_fmt, params['texto'], media_id, link_footer)
