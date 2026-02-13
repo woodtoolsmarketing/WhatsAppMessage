@@ -1,18 +1,14 @@
 import pandas as pd
-import gspread
 import requests
 import time
 import os
 import urllib.parse
-from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN ---
 CLOUD_API_TOKEN = "TU_TOKEN_AQUI"
 PHONE_NUMBER_ID = "TU_ID_TELEFONO_AQUI"
 VERSION = "v17.0"
 BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
-JSON_CREDS = 'service_account.json' 
-NOMBRE_HOJA = "Base de datos wt"
 
 # Nombres de las plantillas en Meta
 PLANTILLA_PROMOS = "oferta_top_3"
@@ -26,72 +22,135 @@ COLOR_VERDE = "\033[92m"
 COLOR_AMARILLO = "\033[93m"
 COLOR_AZUL = "\033[94m"
 
-# --- DICCIONARIO DE VENDEDORES (EXPANDIDO) ---
-# Incluye tanto los grupos ("1/302") como los individuales ("1", "302")
-DB_VENDEDORES = {
-    # Caso Vendedor 0 (Tiene 2 líneas distintas)
-    "0":     ["5491145394279", "5491165630406"],
+# --- BASE DE DATOS (HARDCODED) ---
+# Aquí están los datos exactos de tu hoja de cálculo convertidos a diccionarios
+BASE_DE_DATOS = [
+    {
+        'Cliente': 'Valentin ', 
+        'Número de cliente': 155334, 
+        'Numero de Telefono': 1145394279, 
+        'Zona': 4, 
+        'Vendedor': 0, 
+        'CUIT': '32-42557894-5', 
+        'Sierras': 45, 
+        'Cuchillas ': 12, 
+        'Mechas': 34, 
+        'Fresas': 10, 
+        'Cabezales': 0
+    },
+    {
+        'Cliente': 'Emmanuel ', 
+        'Número de cliente': 125588, 
+        'Numero de Telefono': 1157528428, 
+        'Zona': 12, 
+        'Vendedor': 0, 
+        'CUIT': '22-38665475-6', 
+        'Sierras': 12, 
+        'Cuchillas ': 46, 
+        'Mechas': 58, 
+        'Fresas': 8, 
+        'Cabezales': 5
+    },
+    {
+        'Cliente': 'Santiago ', 
+        'Número de cliente': 235544, 
+        'Numero de Telefono': 1134609057, 
+        'Zona': 12, 
+        'Vendedor': 1, 
+        'CUIT': '43-42660379-9', 
+        'Sierras': 34, 
+        'Cuchillas ': 7, 
+        'Mechas': 12, 
+        'Fresas': 15, 
+        'Cabezales': 2
+    },
+    {
+        'Cliente': 'Ariel', 
+        'Número de cliente': 105544, 
+        'Numero de Telefono': 1134811771, 
+        'Zona': 4, 
+        'Vendedor': 302, 
+        'CUIT': '33-32445668-6', 
+        'Sierras': 43, 
+        'Cuchillas ': 32, 
+        'Mechas': 40, 
+        'Fresas': 5, 
+        'Cabezales': 4
+    },
+    {
+        'Cliente': 'Carlos', 
+        'Número de cliente': 94564, 
+        'Numero de Telefono': 1165630406, 
+        'Zona': 2, 
+        'Vendedor': 44, 
+        'CUIT': '19-18235648-6', 
+        'Sierras': 56, 
+        'Cuchillas ': 45, 
+        'Mechas': 18, 
+        'Fresas': 9, 
+        'Cabezales': 0
+    }
+]
 
-    # Caso 1 y 302 (Líneas distintas)
+# --- DICCIONARIO DE VENDEDORES (EXPANDIDO) ---
+DB_VENDEDORES = {
+    "0":     ["5491145394279", "5491165630406"],
     "1":     ["5491157528428"],
     "302":   ["5491134609057"],
-    "1/302": ["5491157528428", "5491134609057"], # Grupo para menú
-
-    # Caso 02
+    "1/302": ["5491157528428", "5491134609057"], 
     "02":    ["5491145640940"],
-
-    # Caso 15 y 40 (Comparten la MISMA línea)
     "15":    ["5491157528427"],
     "40":    ["5491157528427"],
     "15/40": ["5491157528427"],
-
-    # Caso 04 y 44 (Comparten la MISMA línea)
     "04":    ["5491156321012"],
     "44":    ["5491156321012"],
     "04/44": ["5491156321012"],
-
-    # Resto
     "09":    ["5491153455274"],
     "05":    ["5491164591316"],
     "16":    ["5491145640831"],
     "03":    ["5491168457778"]
 }
 
-# Lista visual para mantener el menú limpio (solo mostramos los grupos)
 OPCIONES_VISUALES = ["0", "1/302", "02", "15/40", "04/44", "09", "05", "16", "03"]
 
 # --- FUNCIONES DE CONEXIÓN Y DATOS ---
 
 def conectar_sheets():
+    """
+    Carga los datos desde la variable BASE_DE_DATOS en lugar de un archivo.
+    """
     try:
-        gc = gspread.service_account(filename=JSON_CREDS)
-        sh = gc.open(NOMBRE_HOJA)
-        datos_brutos = sh.sheet1.get_all_values()
-        if len(datos_brutos) < 2: return pd.DataFrame()
-        headers = datos_brutos[1] 
-        data = datos_brutos[2:]
-        return pd.DataFrame(data, columns=headers)
+        # Convertimos la lista de diccionarios directamente a DataFrame
+        df = pd.DataFrame(BASE_DE_DATOS)
+        
+        # Normalizamos nombres de columnas (quitamos espacios extra si los hubiera)
+        df.columns = [c.strip() for c in df.columns]
+        
+        return df
     except Exception as e:
-        print(f"{COLOR_ROJO}Error conectando a Sheets: {e}{COLOR_RESET}")
-        return pd.DataFrame() 
+        print(f"{COLOR_ROJO}Error cargando la base de datos interna: {e}{COLOR_RESET}")
+        return pd.DataFrame()
 
 def formatear_telefono(numero):
     num_str = str(numero).strip().replace(" ", "").replace("-", "")
+    if not num_str: return ""
+    if num_str.endswith(".0"): num_str = num_str[:-2]
+    
     if not num_str.startswith("54"):
         return f"549{num_str}"
     return num_str
 
 def identificar_cols_productos(df):
-    cols_cliente = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'CUIT', 'Ubicación']
+    cols_cliente = ['Cliente', 'Número de cliente', 'Numero de Telefono', 'CUIT', 'Ubicación', 'Zona', 'Vendedor']
+    # Filtramos columnas que no sean datos del cliente
     return [col for col in df.columns if col not in cols_cliente and col != '']
 
 # --- LÓGICA DE SELECCIÓN DE VENDEDOR ---
 
 def seleccionar_numero_vendedor():
     print(f"\n{COLOR_AMARILLO}--- SELECCIÓN DE VENDEDOR ---{COLOR_RESET}")
-    print("Opciones disponibles (puedes escribir el grupo o el número individual):")
+    print("Opciones disponibles:")
     
-    # Mostrar menú limpio (solo las opciones principales)
     for i, k in enumerate(OPCIONES_VISUALES):
         print(f"{COLOR_AZUL}{k}{COLOR_RESET}", end=" | ")
     print("\n")
@@ -102,9 +161,6 @@ def seleccionar_numero_vendedor():
         if seleccion in DB_VENDEDORES:
             numeros = DB_VENDEDORES[seleccion]
             
-            # --- LÓGICA DE DESEMPATE ---
-            
-            # 1. Si eligieron el GRUPO "1/302" -> Hay que preguntar
             if seleccion == "1/302":
                 print(f"Seleccionaste el grupo 1/302:")
                 print(f"1. Vendedor 1 ({numeros[0]})")
@@ -112,7 +168,6 @@ def seleccionar_numero_vendedor():
                 sub = input("¿Para cuál es? (1 o 2): ")
                 return numeros[1] if sub == "2" else numeros[0]
 
-            # 2. Si eligieron el VENDEDOR "0" (siempre son 2 líneas distintas) -> Hay que preguntar
             elif seleccion == "0":
                 print(f"El vendedor 0 tiene dos líneas:")
                 print(f"1. {numeros[0]}")
@@ -120,8 +175,6 @@ def seleccionar_numero_vendedor():
                 sub = input("¿Cuál usar? (1 o 2): ")
                 return numeros[1] if sub == "2" else numeros[0]
             
-            # 3. Resto de casos (Individuales como "1", "302" o Grupos con mismo número como "15/40")
-            # Devuelven el primer (y único o principal) número directamente
             else:
                 return numeros[0]
         else:
@@ -264,7 +317,10 @@ def ejecutar_sistema():
     print(f"{COLOR_VERDE}✅ Número configurado para el link: {num_vendedor_seleccionado}{COLOR_RESET}")
 
     df = conectar_sheets()
-    if df.empty: return
+    if df.empty: 
+        print(f"{COLOR_ROJO}No se pudieron cargar los datos.{COLOR_RESET}")
+        return
+        
     cols_productos = identificar_cols_productos(df)
     
     # Datos específicos según opción

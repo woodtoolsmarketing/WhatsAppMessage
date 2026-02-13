@@ -28,10 +28,11 @@ class WoodToolsApp:
         
         self.cargar_logo(frame_top) # Carga logo visual
 
-        btn_cargar = tk.Button(frame_top, text="🔄 Conectar a Base de Datos", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
+        # CAMBIO: Texto del botón
+        btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base de Datos Interna", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
         
-        self.lbl_status_db = tk.Label(frame_top, text="Estado: Desconectado", fg="gray", bg="#e0e0e0", font=("Segoe UI", 10))
+        self.lbl_status_db = tk.Label(frame_top, text="Estado: Esperando datos...", fg="gray", bg="#e0e0e0", font=("Segoe UI", 10))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
         # --- 2. ÁREA DE FILTROS ---
@@ -43,7 +44,7 @@ class WoodToolsApp:
         self.entry_nombre.grid(row=0, column=1, padx=5)
         self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
         
-        tk.Label(frame_filtros, text="Ubicación:").grid(row=0, column=2, padx=5)
+        tk.Label(frame_filtros, text="Ubicación/Zona:").grid(row=0, column=2, padx=5)
         self.entry_ubicacion = tk.Entry(frame_filtros)
         self.entry_ubicacion.grid(row=0, column=3, padx=5)
         self.entry_ubicacion.bind("<KeyRelease>", self.aplicar_filtros)
@@ -59,7 +60,7 @@ class WoodToolsApp:
         self.lbl_conteo = tk.Label(frame_filtros, text="Registros filtrados: 0", font=("Segoe UI", 9, "bold"), fg="#2196F3")
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
-        # --- 3. CONFIGURACIÓN DE CAMPAÑA (Backend Integrado) ---
+        # --- 3. CONFIGURACIÓN DE CAMPAÑA ---
         frame_campana = tk.LabelFrame(root, text="Configuración del Mensaje", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 10, "bold"))
         frame_campana.pack(fill="x", padx=20, pady=10)
 
@@ -80,17 +81,16 @@ class WoodToolsApp:
         self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5, sticky="w")
         if self.opciones_vendedores_keys: self.combo_vendedor.current(0)
 
-        # -- Área Dinámica (Cambia según selección) --
+        # -- Área Dinámica --
         self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5", bd=1, relief="solid")
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=30, sticky="nesw")
 
-        # Elementos dinámicos (se crean una vez, se ocultan/muestran)
         self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5", font=("Arial", 8, "bold"))
         self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=40)
         self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen (.jpg/.png)", command=self.seleccionar_imagen, bg="#FF9800", fg="white")
         self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red", font=("Arial", 8))
 
-        self.actualizar_inputs_dinamicos() # Estado inicial
+        self.actualizar_inputs_dinamicos() 
 
         # --- 4. TABLA DE DATOS ---
         frame_tabla = tk.Frame(root)
@@ -99,7 +99,6 @@ class WoodToolsApp:
         cols = ("Cliente", "Telefono", "Ubicación", "Prod. Favorito", "Prod. Secundario")
         self.tree = ttk.Treeview(frame_tabla, columns=cols, show="headings")
         
-        # Configurar columnas
         self.tree.heading("Cliente", text="Cliente"); self.tree.column("Cliente", width=200)
         self.tree.heading("Telefono", text="Teléfono"); self.tree.column("Telefono", width=120)
         self.tree.heading("Ubicación", text="Ubicación"); self.tree.column("Ubicación", width=150)
@@ -111,7 +110,7 @@ class WoodToolsApp:
         scrollbar.pack(side="right", fill="y")
         self.tree.pack(fill="both", expand=True)
 
-        # --- 5. PIE DE PÁGINA (BOTÓN ENVIAR) ---
+        # --- 5. PIE DE PÁGINA ---
         frame_accion = tk.Frame(root, pady=15, bg="#333333")
         frame_accion.pack(fill="x", side="bottom")
         
@@ -123,25 +122,21 @@ class WoodToolsApp:
 
 
     # =========================================================================
-    # LÓGICA DE INTERFAZ Y CONEXIÓN CON MAINCODE
+    # LÓGICA
     # =========================================================================
 
     def cargar_logo(self, parent):
-        # Función auxiliar para cargar imagen si existe
-        ruta = "logo.png" # Asegúrate de tener una imagen o cambia esto
+        ruta = "logo.png" 
         if os.path.exists(ruta):
             try:
                 img = Image.open(ruta)
-                img = img.resize((150, 50)) # Ajustar tamaño
+                img = img.resize((150, 50)) 
                 self.logo_img = ImageTk.PhotoImage(img)
                 tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT, padx=10)
             except: pass
 
-    # --- INPUTS DINÁMICOS ---
     def actualizar_inputs_dinamicos(self, event=None):
         tipo = self.tipo_mensaje_var.get()
-        
-        # Ocultar todo primero
         self.lbl_dinamico_titulo.pack_forget()
         self.entry_dinamico_texto.pack_forget()
         self.btn_subir_imagen.pack_forget()
@@ -151,7 +146,6 @@ class WoodToolsApp:
             self.lbl_dinamico_titulo.config(text="Nombre del Vendedor que viaja:")
             self.lbl_dinamico_titulo.pack(anchor="w", padx=5, pady=2)
             self.entry_dinamico_texto.pack(anchor="w", padx=5, pady=2)
-        
         elif tipo == "Personalizado":
             self.lbl_dinamico_titulo.config(text="Escribe el mensaje (Caption):")
             self.lbl_dinamico_titulo.pack(anchor="w", padx=5, pady=2)
@@ -164,39 +158,43 @@ class WoodToolsApp:
         if ruta:
             ext = os.path.splitext(ruta)[1].lower()
             if ext not in ['.jpg', '.jpeg', '.png']:
-                messagebox.showerror("Error de Formato", "Solo se admiten JPG o PNG.")
+                messagebox.showerror("Error", "Solo JPG o PNG.")
                 self.ruta_imagen_seleccionada = None
                 self.lbl_nombre_imagen.config(text="Formato inválido", fg="red")
             else:
                 self.ruta_imagen_seleccionada = ruta
                 self.lbl_nombre_imagen.config(text=os.path.basename(ruta), fg="green")
 
-    # --- CARGA DE DATOS (Backend) ---
     def cargar_datos(self):
-        self.lbl_status_db.config(text="Conectando a Google Sheets...", fg="orange")
+        # CAMBIO: Texto informativo
+        self.lbl_status_db.config(text="Leyendo diccionario interno...", fg="blue")
         threading.Thread(target=self._hilo_carga).start()
 
     def _hilo_carga(self):
-        # LLAMADA AL BACKEND
-        df = mainCode.conectar_sheets()
+        df = mainCode.conectar_sheets() # Llama al backend que lee el diccionario
         
         if df.empty:
-            self.root.after(0, lambda: self.lbl_status_db.config(text="Error de Conexión", fg="red"))
+            self.root.after(0, lambda: self.lbl_status_db.config(text="Error: Diccionario vacío", fg="red"))
             return
         
         self.df_original = df
-        if 'Ubicación' not in self.df_original.columns: self.df_original['Ubicación'] = "Desc."
+        
+        # CAMBIO: Manejo de ubicación para el diccionario nuevo
+        if 'Ubicación' not in self.df_original.columns:
+            if 'Zona' in self.df_original.columns:
+                self.df_original['Ubicación'] = "Zona " + self.df_original['Zona'].astype(str)
+            else:
+                self.df_original['Ubicación'] = "Sin Ubicación"
+
         self.df_filtrado = df.copy()
 
-        # Llenar combo de productos
         cols_prod = mainCode.identificar_cols_productos(df)
         self.combo_herramientas['values'] = ["Todos"] + cols_prod
         self.combo_herramientas.current(0)
         
         self.root.after(0, self.actualizar_tabla)
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Conectado: {len(df)} clientes", fg="green"))
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Base cargada: {len(df)} registros", fg="green"))
 
-    # --- TABLA Y FILTROS ---
     def actualizar_tabla(self):
         for i in self.tree.get_children(): self.tree.delete(i)
         
@@ -207,9 +205,7 @@ class WoodToolsApp:
             tel = row.get('Numero de Telefono', '')
             ubic = row.get('Ubicación', '')
             
-            # Calculamos favoritos usando el backend para mostrar en tabla
             p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
-            
             self.tree.insert("", "end", values=(nombre, tel, ubic, p1, p2))
             
         self.lbl_conteo.config(text=f"Registros filtrados: {len(self.df_filtrado)}")
@@ -226,7 +222,6 @@ class WoodToolsApp:
         if nom: df = df[df['Cliente'].str.lower().str.contains(nom, na=False)]
         if ubi: df = df[df['Ubicación'].str.lower().str.contains(ubi, na=False)]
         if prod != "Todos":
-            # Filtro numérico
             df[prod] = pd.to_numeric(df[prod], errors='coerce').fillna(0)
             df = df[df[prod] > 0]
             
@@ -239,7 +234,6 @@ class WoodToolsApp:
         self.combo_herramientas.current(0)
         self.aplicar_filtros()
 
-    # --- PROCESO DE ENVÍO (CORE) ---
     def iniciar_envio(self):
         if self.df_filtrado.empty:
             messagebox.showwarning("Vacío", "No hay clientes en la lista para enviar.")
@@ -248,14 +242,12 @@ class WoodToolsApp:
         tipo = self.tipo_mensaje_var.get()
         vendedor_key = self.combo_vendedor.get()
         
-        # 1. Resolver Teléfono del Vendedor (Lógica importada o manejada aquí con datos del backend)
         numeros = mainCode.DB_VENDEDORES.get(vendedor_key, [])
         if not numeros: 
             messagebox.showerror("Error", "Vendedor no válido")
             return
             
         tel_vendedor = numeros[0]
-        # Si hay más de un número (caso 0 o 1/302), preguntamos
         if len(numeros) > 1:
             seleccion = simpledialog.askinteger("Selección Múltiple", 
                 f"El código {vendedor_key} tiene varias líneas:\n1. {numeros[0]}\n2. {numeros[1]}\n\nElige 1 o 2:", 
@@ -263,7 +255,6 @@ class WoodToolsApp:
             if not seleccion: return
             tel_vendedor = numeros[seleccion-1]
 
-        # 2. Recolección de Datos Extra
         params = {'tel_vendedor': tel_vendedor}
         
         if tipo == "Gira Vendedor":
@@ -284,17 +275,14 @@ class WoodToolsApp:
             params['texto'] = texto
             params['ruta_imagen'] = self.ruta_imagen_seleccionada
 
-        # 3. Confirmación
         if not messagebox.askyesno("CONFIRMAR ENVÍO MASIVO", f"Vas a enviar '{tipo}' a {len(self.df_filtrado)} contactos.\n\n¿Estás seguro?"):
             return
 
-        # 4. Ejecutar en hilo secundario
         threading.Thread(target=self._proceso_envio_backend, args=(tipo, params)).start()
 
     def _proceso_envio_backend(self, tipo, params):
         self.lbl_progreso.config(text="Iniciando motor de envíos...", fg="orange")
         
-        # Si es personalizado, subimos la imagen UNA VEZ usando el backend
         media_id = None
         if tipo == "Personalizado":
             self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
@@ -304,7 +292,6 @@ class WoodToolsApp:
                 self.lbl_progreso.config(text="Error subida imagen.", fg="red")
                 return
 
-        # Pre-cálculo si es Promociones (Top Global)
         top_global_p1, top_global_p2, top_global_p3 = "A", "B", "C"
         if tipo == "Promociones":
             top_global_p1, top_global_p2, top_global_p3 = mainCode.obtener_top_3_globales(self.df_original)
@@ -315,17 +302,14 @@ class WoodToolsApp:
         err_count = 0
 
         for i, row in self.df_filtrado.iterrows():
-            # Actualizar GUI
             self.root.after(0, lambda idx=i: self.lbl_progreso.config(text=f"Enviando {idx+1}/{total}...", fg="blue"))
             
             nombre = row.get('Cliente', 'Cliente')
             tel_raw = row.get('Numero de Telefono', '')
             if not tel_raw: continue
 
-            # Usar backend para formatear
             tel_fmt = mainCode.formatear_telefono(tel_raw)
 
-            # Generar Link Dinámico
             prods_str = ""
             if tipo == "Promociones": prods_str = f"{top_global_p1}, {top_global_p2}, {top_global_p3}"
             elif tipo in ["Rescate (Te extrañamos)", "Gira Vendedor"]:
@@ -335,32 +319,26 @@ class WoodToolsApp:
             
             link_footer = mainCode.generar_texto_footer(params['tel_vendedor'], prods_str)
 
-            # --- DISPATCHER DE ENVÍO ---
             exito = False
             msg = ""
 
             if tipo == "Promociones":
                 exito, msg = mainCode.enviar_promocion(tel_fmt, top_global_p1, top_global_p2, top_global_p3, link_footer)
-            
             elif tipo == "Rescate (Te extrañamos)":
                 p1, _ = mainCode.obtener_top_personalizados(row, cols_prod)
                 exito, msg = mainCode.enviar_rescate(tel_fmt, nombre, p1, link_footer)
-            
             elif tipo == "Gira Vendedor":
                 p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
                 exito, msg = mainCode.enviar_gira(tel_fmt, params['nombre_vendedor'], p1, p2, link_footer)
-
             elif tipo == "Personalizado":
                 exito, msg = mainCode.enviar_personalizado(tel_fmt, params['texto'], media_id, link_footer)
 
-            if exito: 
-                ok_count += 1
-                print(f"Enviado a {nombre}")
-            else:
+            if exito: ok_count += 1
+            else: 
                 err_count += 1
                 print(f"Error {nombre}: {msg}")
             
-            time.sleep(1) # Respetar límites API
+            time.sleep(1) 
 
         self.root.after(0, lambda: self.lbl_progreso.config(text=f"Finalizado: {ok_count} OK, {err_count} Errores", fg="green"))
         self.root.after(0, lambda: messagebox.showinfo("Reporte", f"Campaña terminada.\nEnviados: {ok_count}\nFallidos: {err_count}"))
