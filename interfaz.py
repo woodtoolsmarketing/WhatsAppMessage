@@ -17,7 +17,6 @@ class WoodToolsApp:
         self.root.title("Gestor de Marketing WhatsApp")
         self.root.geometry("1350x850") 
         
-        # Variables de estado
         self.df_original = pd.DataFrame()
         self.df_filtrado = pd.DataFrame()
         self.ruta_imagen_seleccionada = None
@@ -28,8 +27,12 @@ class WoodToolsApp:
         
         self.cargar_logo(frame_top)
 
-        btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base de Datos Interna", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_cargar = tk.Button(frame_top, text="🔄 Cargar y Validar Base de Datos", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
+        
+        # BOTÓN NUEVO: Verificar Observados
+        btn_verificar = tk.Button(frame_top, text="🔍 Verificar Observados", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_verificar.pack(side=tk.LEFT, padx=10)
         
         self.lbl_status_db = tk.Label(frame_top, text="Estado: Esperando datos...", fg="gray", bg="#e0e0e0", font=("Segoe UI", 10))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
@@ -38,20 +41,16 @@ class WoodToolsApp:
         frame_filtros = tk.LabelFrame(root, text="Filtros de Audiencia", padx=10, pady=10, font=("Segoe UI", 10, "bold"))
         frame_filtros.pack(fill="x", padx=20, pady=5)
         
-        # Filtro Nombre
         tk.Label(frame_filtros, text="Nombre:").grid(row=0, column=0, padx=5)
         self.entry_nombre = tk.Entry(frame_filtros)
         self.entry_nombre.grid(row=0, column=1, padx=5)
         self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
         
-        # Filtro Zona
         tk.Label(frame_filtros, text="Zona:").grid(row=0, column=2, padx=5)
         self.combo_zona = ttk.Combobox(frame_filtros, state="readonly", width=10)
         self.combo_zona.grid(row=0, column=3, padx=5)
         self.combo_zona.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
-        # Filtro Producto Favorito
-        # AHORA ESTE FILTRO BUSCA POR "PRODUCTO FAVORITO" REAL
         tk.Label(frame_filtros, text="Su Favorito es:").grid(row=0, column=4, padx=5)
         self.combo_herramientas = ttk.Combobox(frame_filtros, state="readonly")
         self.combo_herramientas.grid(row=0, column=5, padx=5)
@@ -94,15 +93,19 @@ class WoodToolsApp:
         frame_tabla = tk.Frame(root)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
         
-        cols = ("Cliente", "Telefono", "Zona", "Prod. Favorito", "Prod. Secundario")
+        cols = ("Cliente", "Telefono", "Zona", "Prod. Favorito", "Estado")
         self.tree = ttk.Treeview(frame_tabla, columns=cols, show="headings")
         
         self.tree.heading("Cliente", text="Cliente"); self.tree.column("Cliente", width=200)
         self.tree.heading("Telefono", text="Teléfono"); self.tree.column("Telefono", width=120)
         self.tree.heading("Zona", text="Zona"); self.tree.column("Zona", width=80)
         self.tree.heading("Prod. Favorito", text="Prod. Favorito"); self.tree.column("Prod. Favorito", width=200)
-        self.tree.heading("Prod. Secundario", text="Prod. Secundario"); self.tree.column("Prod. Secundario", width=200)
+        self.tree.heading("Estado", text="Estado"); self.tree.column("Estado", width=100)
         
+        # Configurar colores para estados
+        self.tree.tag_configure('valido', background='white')
+        self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red') # ROJO
+
         scrollbar = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
@@ -118,19 +121,26 @@ class WoodToolsApp:
         btn_enviar = tk.Button(frame_accion, text="🚀 ENVIAR MENSAJES AHORA", command=self.iniciar_envio, bg="#2196F3", fg="white", font=("Segoe UI", 12, "bold"), padx=30, pady=10)
         btn_enviar.pack(pady=10)
 
-    # =========================================================================
-    # LÓGICA
-    # =========================================================================
+    # --- FUNCIONES ---
 
     def cargar_logo(self, parent):
-        ruta = "logo.png" 
-        if os.path.exists(ruta):
+        if os.path.exists("logo.png"):
             try:
-                img = Image.open(ruta)
-                img = img.resize((150, 50)) 
+                img = Image.open("logo.png").resize((150, 50)) 
                 self.logo_img = ImageTk.PhotoImage(img)
                 tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT, padx=10)
             except: pass
+
+    def verificar_observados(self):
+        """Muestra el reporte de números inválidos"""
+        reporte = mainCode.revisar_numeros_problematicos()
+        vent = tk.Toplevel(self.root)
+        vent.title("Números Observados")
+        vent.geometry("400x400")
+        txt = tk.Text(vent, wrap="word", padx=10, pady=10)
+        txt.pack(fill="both", expand=True)
+        txt.insert("1.0", reporte)
+        txt.config(state="disabled")
 
     def actualizar_inputs_dinamicos(self, event=None):
         tipo = self.tipo_mensaje_var.get()
@@ -151,65 +161,50 @@ class WoodToolsApp:
             self.lbl_nombre_imagen.pack(anchor="w", padx=5)
 
     def seleccionar_imagen(self):
-        ruta = filedialog.askopenfilename(title="Seleccionar Imagen", filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
+        ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
         if ruta:
-            # CORRECCIÓN DE IMAGEN: Normalizar ruta para Windows
-            ruta_norm = os.path.normpath(ruta)
-            
-            ext = os.path.splitext(ruta_norm)[1].lower()
-            if ext not in ['.jpg', '.jpeg', '.png']:
-                messagebox.showerror("Error", "Solo JPG o PNG.")
-                self.ruta_imagen_seleccionada = None
-                self.lbl_nombre_imagen.config(text="Formato inválido", fg="red")
-            else:
-                self.ruta_imagen_seleccionada = ruta_norm
-                self.lbl_nombre_imagen.config(text=os.path.basename(ruta_norm), fg="green")
+            # Normalizamos la ruta
+            self.ruta_imagen_seleccionada = os.path.normpath(ruta)
+            self.lbl_nombre_imagen.config(text=os.path.basename(ruta), fg="green")
 
     def cargar_datos(self):
-        self.lbl_status_db.config(text="Leyendo diccionario interno...", fg="blue")
+        self.lbl_status_db.config(text="Validando base de datos...", fg="blue")
         threading.Thread(target=self._hilo_carga).start()
 
     def _hilo_carga(self):
-        df = mainCode.conectar_sheets() 
+        # Usamos la función del backend que valida
+        df = mainCode.conectar_y_procesar() 
         if df.empty:
-            self.root.after(0, lambda: self.lbl_status_db.config(text="Error: Diccionario vacío", fg="red"))
+            self.root.after(0, lambda: self.lbl_status_db.config(text="Error: Base vacía", fg="red"))
             return
         
         # 1. Normalizar Zona
         if 'Zona' not in df.columns: df['Zona'] = "N/A"
         else: df['Zona'] = df['Zona'].astype(str)
 
-        # 2. PRE-CALCULAR FAVORITOS (Para poder filtrar por "Favorito")
-        # Aquí calculamos qué es lo que más compró cada uno y lo guardamos en una columna nueva
+        # 2. Pre-calcular favoritos
         cols_prod = mainCode.identificar_cols_productos(df)
-        
-        list_favoritos = []
-        list_secundarios = []
-        
+        favs, secs = [], []
         for index, row in df.iterrows():
-            # Usamos la lógica de mainCode para sacar el #1
             p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
-            list_favoritos.append(p1)
-            list_secundarios.append(p2)
+            favs.append(p1)
+            secs.append(p2)
         
-        # Agregamos estas columnas "ocultas" al DataFrame para filtrar después
-        df['Calculated_Fav'] = list_favoritos
-        df['Calculated_Sec'] = list_secundarios
+        df['Fav_Temp'] = favs
+        df['Sec_Temp'] = secs
         
         self.df_original = df
         self.df_filtrado = df.copy()
 
-        # Llenar combo de PRODUCTOS
         self.combo_herramientas['values'] = ["Todos"] + cols_prod
         self.combo_herramientas.current(0)
         
-        # Llenar combo de ZONAS
-        zonas_unicas = sorted(self.df_original['Zona'].unique().tolist())
-        self.combo_zona['values'] = ["Todas"] + zonas_unicas
+        zonas = sorted(self.df_original['Zona'].unique().tolist())
+        self.combo_zona['values'] = ["Todas"] + zonas
         self.combo_zona.current(0)
         
         self.root.after(0, self.actualizar_tabla)
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Base cargada: {len(df)} registros", fg="green"))
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Base cargada: {len(df)} regs", fg="green"))
 
     def actualizar_tabla(self):
         for i in self.tree.get_children(): self.tree.delete(i)
@@ -218,35 +213,27 @@ class WoodToolsApp:
             nombre = row.get('Cliente', '')
             tel = row.get('Numero de Telefono', '')
             zona = row.get('Zona', '')
-            # Usamos los pre-calculados para mostrar
-            p1 = row.get('Calculated_Fav', '-')
-            p2 = row.get('Calculated_Sec', '-')
+            p1 = row.get('Fav_Temp', '-')
             
-            self.tree.insert("", "end", values=(nombre, tel, zona, p1, p2))
+            # Verificación de validez para colorear
+            es_valido = row.get('Es_Valido', False)
+            estado_txt = "OK" if es_valido else "INVÁLIDO"
+            tag = "valido" if es_valido else "invalido"
             
-        self.lbl_conteo.config(text=f"Registros filtrados: {len(self.df_filtrado)}")
+            self.tree.insert("", "end", values=(nombre, tel, zona, p1, estado_txt), tags=(tag,))
+            
+        self.lbl_conteo.config(text=f"Registros: {len(self.df_filtrado)}")
 
     def aplicar_filtros(self, event=None):
         if self.df_original.empty: return
-        
         nom = self.entry_nombre.get().lower()
-        zona_sel = self.combo_zona.get()
-        prod_sel = self.combo_herramientas.get()
+        zona = self.combo_zona.get()
+        prod = self.combo_herramientas.get()
         
         df = self.df_original.copy()
-        
-        # 1. Filtro Nombre
-        if nom: 
-            df = df[df['Cliente'].str.lower().str.contains(nom, na=False)]
-        
-        # 2. Filtro Zona
-        if zona_sel != "Todas":
-            df = df[df['Zona'] == zona_sel]
-        
-        # 3. Filtro Producto Favorito (CORREGIDO)
-        # Ahora comparamos contra la columna pre-calculada 'Calculated_Fav'
-        if prod_sel != "Todos":
-            df = df[df['Calculated_Fav'] == prod_sel]
+        if nom: df = df[df['Cliente'].str.lower().str.contains(nom, na=False)]
+        if zona != "Todas": df = df[df['Zona'] == zona]
+        if prod != "Todos": df = df[df['Fav_Temp'] == prod]
             
         self.df_filtrado = df
         self.actualizar_tabla()
@@ -258,126 +245,86 @@ class WoodToolsApp:
         self.aplicar_filtros()
 
     def iniciar_envio(self):
-        if self.df_filtrado.empty:
-            messagebox.showwarning("Vacío", "No hay clientes en la lista para enviar.")
-            return
+        # Filtramos solo válidos para envío
+        df_a_enviar = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
+        df_invalidos = self.df_filtrado[self.df_filtrado['Es_Valido'] == False]
+        
+        if df_a_enviar.empty:
+            msg = "No hay usuarios válidos."
+            if not df_invalidos.empty: msg += f"\n(Hay {len(df_invalidos)} inválidos)."
+            return messagebox.showwarning("Atención", msg)
 
         tipo = self.tipo_mensaje_var.get()
         vendedor_key = self.combo_vendedor.get()
         
         numeros = mainCode.DB_VENDEDORES.get(vendedor_key, [])
-        if not numeros: 
-            messagebox.showerror("Error", "Vendedor no válido")
-            return
-            
         tel_vendedor = numeros[0]
         if len(numeros) > 1:
-            seleccion = simpledialog.askinteger("Selección Múltiple", 
-                f"El código {vendedor_key} tiene varias líneas:\n1. {numeros[0]}\n2. {numeros[1]}\n\nElige 1 o 2:", 
-                minvalue=1, maxvalue=2)
-            if not seleccion: return
-            tel_vendedor = numeros[seleccion-1]
+            sel = simpledialog.askinteger("Selección", f"1: {numeros[0]}\n2: {numeros[1]}", minvalue=1, maxvalue=2)
+            if not sel: return
+            tel_vendedor = numeros[sel-1]
 
         params = {'tel_vendedor': tel_vendedor}
         
         if tipo == "Gira Vendedor":
-            nombre_vendedor = self.entry_dinamico_texto.get().strip()
-            if not nombre_vendedor:
-                messagebox.showerror("Faltan datos", "Escribe el nombre del vendedor.")
-                return
-            params['nombre_vendedor'] = nombre_vendedor
-
+            if not self.entry_dinamico_texto.get().strip(): return messagebox.showerror("Error", "Falta vendedor")
+            params['nombre_vendedor'] = self.entry_dinamico_texto.get().strip()
         elif tipo == "Personalizado":
-            texto = self.entry_dinamico_texto.get().strip()
-            if not texto: 
-                messagebox.showerror("Faltan datos", "Escribe el texto del mensaje.")
-                return
-            if not self.ruta_imagen_seleccionada:
-                messagebox.showerror("Error Imagen", "Debes seleccionar una imagen válida.")
-                return
-            params['texto'] = texto
-            # Usamos la ruta limpia
+            if not self.entry_dinamico_texto.get().strip(): return messagebox.showerror("Error", "Falta texto")
+            if not self.ruta_imagen_seleccionada: return messagebox.showerror("Error", "Falta imagen")
+            params['texto'] = self.entry_dinamico_texto.get().strip()
             params['ruta_imagen'] = self.ruta_imagen_seleccionada
 
-        if not messagebox.askyesno("CONFIRMAR ENVÍO MASIVO", f"Vas a enviar '{tipo}' a {len(self.df_filtrado)} contactos.\n\n¿Estás seguro?"):
+        if not messagebox.askyesno("Confirmar", f"Se enviará a {len(df_a_enviar)} contactos válidos.\n({len(df_invalidos)} inválidos omitidos)."):
             return
 
-        threading.Thread(target=self._proceso_envio_backend, args=(tipo, params)).start()
+        threading.Thread(target=self._proceso_envio, args=(tipo, params, df_a_enviar)).start()
 
-    def _proceso_envio_backend(self, tipo, params):
-        self.lbl_progreso.config(text="Iniciando motor de envíos...", fg="orange")
+    def _proceso_envio(self, tipo, params, df_valido):
+        self.lbl_progreso.config(text="Iniciando...", fg="orange")
         
         media_id = None
         if tipo == "Personalizado":
-            self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
+            self.lbl_progreso.config(text="Subiendo imagen...", fg="blue")
+            if not os.path.exists(params['ruta_imagen']): return messagebox.showerror("Error", "Imagen no existe")
+            media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
+            if not media_id: return messagebox.showerror("Error", "Fallo subida API")
+
+        top_p1, top_p2, top_p3 = mainCode.obtener_top_3_globales(self.df_original)
+        
+        total = len(df_valido)
+        cnt_ok = 0
+        cnt_err = 0
+        
+        for i, (idx, row) in enumerate(df_valido.iterrows()):
+            self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Enviando {x+1}/{total}...", fg="blue"))
             
-            # CORRECCIÓN: Validación de archivo antes de llamar a la API
-            if not os.path.exists(params['ruta_imagen']):
-                self.root.after(0, lambda: messagebox.showerror("Error Archivo", "El archivo de imagen no se encuentra."))
-                self.lbl_progreso.config(text="Error: Archivo no encontrado", fg="red")
-                return
-
-            try:
-                media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
-            except Exception as e:
-                print(f"Excepción subiendo imagen: {e}")
-                media_id = None
-
-            if not media_id:
-                self.root.after(0, lambda: messagebox.showerror("Error API", "Fallo al subir la imagen a WhatsApp.\nRevisa el Token o la conexión."))
-                self.lbl_progreso.config(text="Error subida imagen.", fg="red")
-                return
-
-        top_global_p1, top_global_p2, top_global_p3 = "A", "B", "C"
-        if tipo == "Promociones":
-            top_global_p1, top_global_p2, top_global_p3 = mainCode.obtener_top_3_globales(self.df_original)
-
-        total = len(self.df_filtrado)
-        ok_count = 0
-        err_count = 0
-
-        for i, row in self.df_filtrado.iterrows():
-            self.root.after(0, lambda idx=i: self.lbl_progreso.config(text=f"Enviando {idx+1}/{total}...", fg="blue"))
+            nombre = row['Cliente']
+            tel_fmt = row['Tel_Formateado'] 
+            p1 = row.get('Fav_Temp', 'Prod')
+            p2 = row.get('Sec_Temp', 'Prod')
             
-            nombre = row.get('Cliente', 'Cliente')
-            tel_raw = row.get('Numero de Telefono', '')
-            if not tel_raw: continue
-
-            tel_fmt = mainCode.formatear_telefono(tel_raw)
-
-            # Usamos los pre-calculados del DF para asegurar consistencia
-            p1 = row.get('Calculated_Fav', 'Productos')
-            p2 = row.get('Calculated_Sec', 'Ofertas')
+            prods = f"{top_p1}, {top_p2}, {top_p3}" if tipo == "Promociones" else f"{p1} y {p2}" if tipo != "Personalizado" else "promo"
+            footer = mainCode.generar_texto_footer(params['tel_vendedor'], prods)
             
-            prods_str = ""
-            if tipo == "Promociones": prods_str = f"{top_global_p1}, {top_global_p2}, {top_global_p3}"
-            elif tipo in ["Rescate (Te extrañamos)", "Gira Vendedor"]:
-                prods_str = f"{p1} y {p2}"
-            else: prods_str = "la promo enviada"
-            
-            link_footer = mainCode.generar_texto_footer(params['tel_vendedor'], prods_str)
-
             exito = False
-            msg = ""
-
-            if tipo == "Promociones":
-                exito, msg = mainCode.enviar_promocion(tel_fmt, top_global_p1, top_global_p2, top_global_p3, link_footer)
-            elif tipo == "Rescate (Te extrañamos)":
-                exito, msg = mainCode.enviar_rescate(tel_fmt, nombre, p1, link_footer)
-            elif tipo == "Gira Vendedor":
-                exito, msg = mainCode.enviar_gira(tel_fmt, params['nombre_vendedor'], p1, p2, link_footer)
-            elif tipo == "Personalizado":
-                exito, msg = mainCode.enviar_personalizado(tel_fmt, params['texto'], media_id, link_footer)
-
-            if exito: ok_count += 1
-            else: 
-                err_count += 1
-                print(f"Error {nombre}: {msg}")
             
-            time.sleep(1) 
+            if tipo == "Promociones":
+                exito, _ = mainCode.enviar_promocion(tel_fmt, top_p1, top_p2, top_p3, footer)
+            elif tipo == "Rescate (Te extrañamos)":
+                exito, _ = mainCode.enviar_rescate(tel_fmt, nombre, p1, footer)
+            elif tipo == "Gira Vendedor":
+                exito, _ = mainCode.enviar_gira(tel_fmt, params['nombre_vendedor'], p1, p2, footer)
+            elif tipo == "Personalizado":
+                exito, _ = mainCode.enviar_personalizado(tel_fmt, params['texto'], media_id, footer)
+            
+            if exito: cnt_ok += 1
+            else: cnt_err += 1
+            
+            time.sleep(1)
 
-        self.root.after(0, lambda: self.lbl_progreso.config(text=f"Finalizado: {ok_count} OK, {err_count} Errores", fg="green"))
-        self.root.after(0, lambda: messagebox.showinfo("Reporte", f"Campaña terminada.\nEnviados: {ok_count}\nFallidos: {err_count}"))
+        self.root.after(0, lambda: self.lbl_progreso.config(text="Finalizado", fg="green"))
+        self.root.after(0, lambda: messagebox.showinfo("Fin", f"Enviados: {cnt_ok}\nFallidos (API): {cnt_err}"))
 
 if __name__ == "__main__":
     root = tk.Tk()
