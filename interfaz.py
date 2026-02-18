@@ -1,4 +1,3 @@
-# NOMBRE DEL ARCHIVO: interfaz_app.py
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 from PIL import Image, ImageTk 
@@ -8,7 +7,7 @@ import os
 import sys 
 import time
 
-# --- IMPORTAMOS TU BACKEND ---
+# --- IMPORTAMOS EL BACKEND ---
 import mainCode 
 
 class WoodToolsApp:
@@ -21,7 +20,7 @@ class WoodToolsApp:
         self.df_filtrado = pd.DataFrame()
         self.ruta_imagen_seleccionada = None
         
-        # --- 1. CABECERA ---
+        # --- CABECERA ---
         frame_top = tk.Frame(root, pady=10, padx=10, bg="#e0e0e0")
         frame_top.pack(fill="x")
         
@@ -30,14 +29,13 @@ class WoodToolsApp:
         btn_cargar = tk.Button(frame_top, text="🔄 Cargar y Validar Base de Datos", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
         
-        # BOTÓN NUEVO: Verificar Observados
         btn_verificar = tk.Button(frame_top, text="🔍 Verificar Observados", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
         btn_verificar.pack(side=tk.LEFT, padx=10)
         
         self.lbl_status_db = tk.Label(frame_top, text="Estado: Esperando datos...", fg="gray", bg="#e0e0e0", font=("Segoe UI", 10))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
-        # --- 2. ÁREA DE FILTROS ---
+        # --- FILTROS ---
         frame_filtros = tk.LabelFrame(root, text="Filtros de Audiencia", padx=10, pady=10, font=("Segoe UI", 10, "bold"))
         frame_filtros.pack(fill="x", padx=20, pady=5)
         
@@ -62,7 +60,7 @@ class WoodToolsApp:
         self.lbl_conteo = tk.Label(frame_filtros, text="Registros: 0", font=("Segoe UI", 9, "bold"), fg="#2196F3")
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
-        # --- 3. CONFIGURACIÓN DE CAMPAÑA ---
+        # --- CAMPAÑA ---
         frame_campana = tk.LabelFrame(root, text="Configuración del Mensaje", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 10, "bold"))
         frame_campana.pack(fill="x", padx=20, pady=10)
 
@@ -89,7 +87,7 @@ class WoodToolsApp:
 
         self.actualizar_inputs_dinamicos() 
 
-        # --- 4. TABLA DE DATOS ---
+        # --- TABLA ---
         frame_tabla = tk.Frame(root)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
         
@@ -102,16 +100,15 @@ class WoodToolsApp:
         self.tree.heading("Prod. Favorito", text="Prod. Favorito"); self.tree.column("Prod. Favorito", width=200)
         self.tree.heading("Estado", text="Estado"); self.tree.column("Estado", width=100)
         
-        # Configurar colores para estados
         self.tree.tag_configure('valido', background='white')
-        self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red') # ROJO
+        self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red')
 
         scrollbar = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.tree.pack(fill="both", expand=True)
 
-        # --- 5. PIE DE PÁGINA ---
+        # --- FOOTER ---
         frame_accion = tk.Frame(root, pady=15, bg="#333333")
         frame_accion.pack(fill="x", side="bottom")
         
@@ -124,15 +121,22 @@ class WoodToolsApp:
     # --- FUNCIONES ---
 
     def cargar_logo(self, parent):
-        if os.path.exists("logo.png"):
+        # Buscamos primero en la carpeta 'Imagenes'
+        ruta_logo = mainCode.obtener_ruta_recurso("Imagenes/logo.png")
+        
+        # Si no está, probamos en la raíz (por si acaso)
+        if not os.path.exists(ruta_logo):
+            ruta_logo = mainCode.obtener_ruta_recurso("logo.png")
+
+        if os.path.exists(ruta_logo):
             try:
-                img = Image.open("logo.png").resize((150, 50)) 
+                img = Image.open(ruta_logo).resize((150, 50)) 
                 self.logo_img = ImageTk.PhotoImage(img)
                 tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT, padx=10)
-            except: pass
+            except Exception as e:
+                print(f"Error cargando logo: {e}")
 
     def verificar_observados(self):
-        """Muestra el reporte de números inválidos"""
         reporte = mainCode.revisar_numeros_problematicos()
         vent = tk.Toplevel(self.root)
         vent.title("Números Observados")
@@ -163,7 +167,6 @@ class WoodToolsApp:
     def seleccionar_imagen(self):
         ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
         if ruta:
-            # Normalizamos la ruta
             self.ruta_imagen_seleccionada = os.path.normpath(ruta)
             self.lbl_nombre_imagen.config(text=os.path.basename(ruta), fg="green")
 
@@ -172,17 +175,15 @@ class WoodToolsApp:
         threading.Thread(target=self._hilo_carga).start()
 
     def _hilo_carga(self):
-        # Usamos la función del backend que valida
         df = mainCode.conectar_y_procesar() 
         if df.empty:
-            self.root.after(0, lambda: self.lbl_status_db.config(text="Error: Base vacía", fg="red"))
+            self.root.after(0, lambda: self.lbl_status_db.config(text="Error: No se encuentra Excel", fg="red"))
+            self.root.after(0, lambda: messagebox.showerror("Error", f"No se encuentra 'Base de datos wt.xlsx'\n\nDEBES COPIARLO MANUALMENTE AL LADO DEL EJECUTABLE."))
             return
         
-        # 1. Normalizar Zona
         if 'Zona' not in df.columns: df['Zona'] = "N/A"
         else: df['Zona'] = df['Zona'].astype(str)
 
-        # 2. Pre-calcular favoritos
         cols_prod = mainCode.identificar_cols_productos(df)
         favs, secs = [], []
         for index, row in df.iterrows():
@@ -208,20 +209,15 @@ class WoodToolsApp:
 
     def actualizar_tabla(self):
         for i in self.tree.get_children(): self.tree.delete(i)
-        
         for index, row in self.df_filtrado.iterrows():
             nombre = row.get('Cliente', '')
             tel = row.get('Numero de Telefono', '')
             zona = row.get('Zona', '')
             p1 = row.get('Fav_Temp', '-')
-            
-            # Verificación de validez para colorear
             es_valido = row.get('Es_Valido', False)
             estado_txt = "OK" if es_valido else "INVÁLIDO"
             tag = "valido" if es_valido else "invalido"
-            
             self.tree.insert("", "end", values=(nombre, tel, zona, p1, estado_txt), tags=(tag,))
-            
         self.lbl_conteo.config(text=f"Registros: {len(self.df_filtrado)}")
 
     def aplicar_filtros(self, event=None):
@@ -229,12 +225,10 @@ class WoodToolsApp:
         nom = self.entry_nombre.get().lower()
         zona = self.combo_zona.get()
         prod = self.combo_herramientas.get()
-        
         df = self.df_original.copy()
         if nom: df = df[df['Cliente'].str.lower().str.contains(nom, na=False)]
         if zona != "Todas": df = df[df['Zona'] == zona]
         if prod != "Todos": df = df[df['Fav_Temp'] == prod]
-            
         self.df_filtrado = df
         self.actualizar_tabla()
 
@@ -245,10 +239,8 @@ class WoodToolsApp:
         self.aplicar_filtros()
 
     def iniciar_envio(self):
-        # Filtramos solo válidos para envío
         df_a_enviar = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
         df_invalidos = self.df_filtrado[self.df_filtrado['Es_Valido'] == False]
-        
         if df_a_enviar.empty:
             msg = "No hay usuarios válidos."
             if not df_invalidos.empty: msg += f"\n(Hay {len(df_invalidos)} inválidos)."
@@ -256,7 +248,6 @@ class WoodToolsApp:
 
         tipo = self.tipo_mensaje_var.get()
         vendedor_key = self.combo_vendedor.get()
-        
         numeros = mainCode.DB_VENDEDORES.get(vendedor_key, [])
         tel_vendedor = numeros[0]
         if len(numeros) > 1:
@@ -291,36 +282,25 @@ class WoodToolsApp:
             if not media_id: return messagebox.showerror("Error", "Fallo subida API")
 
         top_p1, top_p2, top_p3 = mainCode.obtener_top_3_globales(self.df_original)
-        
         total = len(df_valido)
-        cnt_ok = 0
-        cnt_err = 0
+        cnt_ok = 0; cnt_err = 0
         
         for i, (idx, row) in enumerate(df_valido.iterrows()):
             self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Enviando {x+1}/{total}...", fg="blue"))
-            
             nombre = row['Cliente']
             tel_fmt = row['Tel_Formateado'] 
-            p1 = row.get('Fav_Temp', 'Prod')
-            p2 = row.get('Sec_Temp', 'Prod')
-            
+            p1 = row.get('Fav_Temp', 'Prod'); p2 = row.get('Sec_Temp', 'Prod')
             prods = f"{top_p1}, {top_p2}, {top_p3}" if tipo == "Promociones" else f"{p1} y {p2}" if tipo != "Personalizado" else "promo"
             footer = mainCode.generar_texto_footer(params['tel_vendedor'], prods)
-            
             exito = False
             
-            if tipo == "Promociones":
-                exito, _ = mainCode.enviar_promocion(tel_fmt, top_p1, top_p2, top_p3, footer)
-            elif tipo == "Rescate (Te extrañamos)":
-                exito, _ = mainCode.enviar_rescate(tel_fmt, nombre, p1, footer)
-            elif tipo == "Gira Vendedor":
-                exito, _ = mainCode.enviar_gira(tel_fmt, params['nombre_vendedor'], p1, p2, footer)
-            elif tipo == "Personalizado":
-                exito, _ = mainCode.enviar_personalizado(tel_fmt, params['texto'], media_id, footer)
+            if tipo == "Promociones": exito, _ = mainCode.enviar_promocion(tel_fmt, top_p1, top_p2, top_p3, footer)
+            elif tipo == "Rescate (Te extrañamos)": exito, _ = mainCode.enviar_rescate(tel_fmt, nombre, p1, footer)
+            elif tipo == "Gira Vendedor": exito, _ = mainCode.enviar_gira(tel_fmt, params['nombre_vendedor'], p1, p2, footer)
+            elif tipo == "Personalizado": exito, _ = mainCode.enviar_personalizado(tel_fmt, params['texto'], media_id, footer)
             
             if exito: cnt_ok += 1
             else: cnt_err += 1
-            
             time.sleep(1)
 
         self.root.after(0, lambda: self.lbl_progreso.config(text="Finalizado", fg="green"))
