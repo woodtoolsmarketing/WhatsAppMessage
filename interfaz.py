@@ -7,230 +7,339 @@ import os
 import sys 
 import time
 
-# --- IMPORTAMOS EL BACKEND ---
+# Importamos nuestro backend completo
 import mainCode 
 
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp")
-        self.root.geometry("1350x850") 
+        self.root.title("Gestor de Marketing WhatsApp v4.0 - Multi-Teléfonos")
+        self.root.geometry("1400x900") 
         
         self.df_original = pd.DataFrame()
         self.df_filtrado = pd.DataFrame()
         self.ruta_imagen_seleccionada = None
         
-        # --- CABECERA ---
+        # ==========================================
+        # 1. CABECERA
+        # ==========================================
         frame_top = tk.Frame(root, pady=10, padx=10, bg="#e0e0e0")
         frame_top.pack(fill="x")
         
         self.cargar_logo(frame_top)
 
-        btn_cargar = tk.Button(frame_top, text="🔄 Cargar y Validar Base de Datos", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base de Datos", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
         
-        btn_verificar = tk.Button(frame_top, text="🔍 Verificar Observados", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_verificar = tk.Button(frame_top, text="🔍 Ver Clientes Descartados", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
         btn_verificar.pack(side=tk.LEFT, padx=10)
         
-        self.lbl_status_db = tk.Label(frame_top, text="Estado: Esperando datos...", fg="gray", bg="#e0e0e0", font=("Segoe UI", 10))
+        self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="gray", bg="#e0e0e0")
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
-        # --- FILTROS ---
-        frame_filtros = tk.LabelFrame(root, text="Filtros de Audiencia", padx=10, pady=10, font=("Segoe UI", 10, "bold"))
+        # ==========================================
+        # 2. ÁREA DE FILTROS
+        # ==========================================
+        frame_filtros = tk.LabelFrame(root, text="Filtros", padx=10, pady=10)
         frame_filtros.pack(fill="x", padx=20, pady=5)
         
-        tk.Label(frame_filtros, text="Nombre:").grid(row=0, column=0, padx=5)
+        tk.Label(frame_filtros, text="Nombre:").grid(row=0, column=0)
         self.entry_nombre = tk.Entry(frame_filtros)
         self.entry_nombre.grid(row=0, column=1, padx=5)
         self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
         
-        tk.Label(frame_filtros, text="Zona:").grid(row=0, column=2, padx=5)
+        tk.Label(frame_filtros, text="Zona:").grid(row=0, column=2)
         self.combo_zona = ttk.Combobox(frame_filtros, state="readonly", width=10)
-        self.combo_zona.grid(row=0, column=3, padx=5)
+        self.combo_zona.grid(row=0, column=3)
         self.combo_zona.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
-        tk.Label(frame_filtros, text="Su Favorito es:").grid(row=0, column=4, padx=5)
+        tk.Label(frame_filtros, text="Favorito:").grid(row=0, column=4)
         self.combo_herramientas = ttk.Combobox(frame_filtros, state="readonly")
-        self.combo_herramientas.grid(row=0, column=5, padx=5)
+        self.combo_herramientas.grid(row=0, column=5)
         self.combo_herramientas.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
-        btn_limpiar = tk.Button(frame_filtros, text="Limpiar Filtros", command=self.limpiar_filtros)
+        btn_limpiar = tk.Button(frame_filtros, text="Limpiar", command=self.limpiar_filtros)
         btn_limpiar.grid(row=0, column=6, padx=15)
-
-        self.lbl_conteo = tk.Label(frame_filtros, text="Registros: 0", font=("Segoe UI", 9, "bold"), fg="#2196F3")
+        
+        self.lbl_conteo = tk.Label(frame_filtros, text="Regs: 0", font=("Segoe UI", 9, "bold"), fg="#2196F3")
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
-        # --- CAMPAÑA ---
-        frame_campana = tk.LabelFrame(root, text="Configuración del Mensaje", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 10, "bold"))
+        # ==========================================
+        # 3. CONFIGURACIÓN DEL MENSAJE
+        # ==========================================
+        frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=10, pady=10, bg="#f5f5f5")
         frame_campana.pack(fill="x", padx=20, pady=10)
 
-        tk.Label(frame_campana, text="Tipo de Mensaje:", bg="#f5f5f5").grid(row=0, column=0, sticky="w")
+        tk.Label(frame_campana, text="Tipo Mensaje:", bg="#f5f5f5").grid(row=0, column=0, sticky="w")
         self.tipo_mensaje_var = tk.StringVar(value="Promociones")
-        opciones_mensaje = ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado"]
-        self.combo_tipo_mensaje = ttk.Combobox(frame_campana, values=opciones_mensaje, state="readonly", textvariable=self.tipo_mensaje_var, width=25)
-        self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        
+        opciones_plantillas = ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado"]
+        self.combo_tipo_mensaje = ttk.Combobox(frame_campana, values=opciones_plantillas, state="readonly", textvariable=self.tipo_mensaje_var, width=25)
+        self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=5)
         self.combo_tipo_mensaje.bind("<<ComboboxSelected>>", self.actualizar_inputs_dinamicos)
 
-        tk.Label(frame_campana, text="Vendedor (Link WhatsApp):", bg="#f5f5f5").grid(row=0, column=1, sticky="w", padx=20)
-        self.opciones_vendedores_keys = list(mainCode.DB_VENDEDORES.keys())
-        self.combo_vendedor = ttk.Combobox(frame_campana, values=self.opciones_vendedores_keys, state="readonly", width=15)
-        self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5, sticky="w")
-        if self.opciones_vendedores_keys: self.combo_vendedor.current(0)
+        tk.Label(frame_campana, text="Enviar como (Link Vendedor):", bg="#f5f5f5").grid(row=0, column=1, sticky="w", padx=20)
+        
+        opciones_vendedores = ["AUTOMÁTICO (Según Excel)"] + list(mainCode.DB_VENDEDORES.keys())
+        self.combo_vendedor = ttk.Combobox(frame_campana, values=opciones_vendedores, state="readonly", width=30)
+        self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5)
+        self.combo_vendedor.current(0)
 
-        self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5", bd=1, relief="solid")
+        self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5")
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=30, sticky="nesw")
-
-        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5", font=("Arial", 8, "bold"))
+        
+        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5")
         self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=40)
-        self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen (.jpg/.png)", command=self.seleccionar_imagen, bg="#FF9800", fg="white")
-        self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red", font=("Arial", 8))
+        self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen", command=self.seleccionar_imagen)
+        self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red")
 
         self.actualizar_inputs_dinamicos() 
 
-        # --- TABLA ---
-        frame_tabla = tk.Frame(root)
-        frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
-        
-        cols = ("Cliente", "Telefono", "Zona", "Prod. Favorito", "Estado")
-        self.tree = ttk.Treeview(frame_tabla, columns=cols, show="headings")
-        
-        self.tree.heading("Cliente", text="Cliente"); self.tree.column("Cliente", width=200)
-        self.tree.heading("Telefono", text="Teléfono"); self.tree.column("Telefono", width=120)
-        self.tree.heading("Zona", text="Zona"); self.tree.column("Zona", width=80)
-        self.tree.heading("Prod. Favorito", text="Prod. Favorito"); self.tree.column("Prod. Favorito", width=200)
-        self.tree.heading("Estado", text="Estado"); self.tree.column("Estado", width=100)
-        
-        self.tree.tag_configure('valido', background='white')
-        self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red')
-
-        scrollbar = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscroll=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        self.tree.pack(fill="both", expand=True)
-
-        # --- FOOTER ---
+        # ==========================================
+        # 4. BOTÓN DE ENVÍO (PIE DE PÁGINA)
+        # ==========================================
         frame_accion = tk.Frame(root, pady=15, bg="#333333")
         frame_accion.pack(fill="x", side="bottom")
         
-        self.lbl_progreso = tk.Label(frame_accion, text="Sistema listo.", fg="white", bg="#333333", font=("Segoe UI", 11))
-        self.lbl_progreso.pack(pady=(5, 0))
-
-        btn_enviar = tk.Button(frame_accion, text="🚀 ENVIAR MENSAJES AHORA", command=self.iniciar_envio, bg="#2196F3", fg="white", font=("Segoe UI", 12, "bold"), padx=30, pady=10)
+        self.lbl_progreso = tk.Label(frame_accion, text="Sistema listo.", fg="white", bg="#333333")
+        self.lbl_progreso.pack(pady=5)
+        
+        btn_enviar = tk.Button(frame_accion, text="🚀 ENVIAR A TODOS LOS NÚMEROS VÁLIDOS", command=self.iniciar_envio, bg="#2196F3", fg="white", font=("Segoe UI", 12, "bold"))
         btn_enviar.pack(pady=10)
 
-    # --- FUNCIONES ---
+        # ==========================================
+        # 5. PANEL DE DETALLES CON RECUADROS DE COLORES
+        # ==========================================
+        self.frame_telefonos = tk.LabelFrame(root, text="🔍 Alternativas Encontradas (Clic en la tabla arriba para ver)", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 9, "bold"))
+        self.frame_telefonos.pack(fill="x", padx=20, pady=5, side="bottom")
+        self._limpiar_panel_telefonos()
 
-    def cargar_logo(self, parent):
-        # Buscamos primero en la carpeta 'Imagenes'
-        ruta_logo = mainCode.obtener_ruta_recurso("Imagenes/logo.png")
+        # ==========================================
+        # 6. TABLA DE RESULTADOS
+        # ==========================================
+        frame_tabla = tk.Frame(root)
+        frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
         
-        # Si no está, probamos en la raíz (por si acaso)
-        if not os.path.exists(ruta_logo):
-            ruta_logo = mainCode.obtener_ruta_recurso("logo.png")
+        self.tree = ttk.Treeview(frame_tabla, columns=("Cli", "Tel", "Vend", "Zona", "Est"), show="headings")
+        self.tree.heading("Cli", text="Cliente")
+        self.tree.column("Cli", width=200)
+        
+        self.tree.heading("Tel", text="Se enviará a:")
+        self.tree.column("Tel", width=250)
+        
+        self.tree.heading("Vend", text="Vendedor (Excel)")
+        self.tree.column("Vend", width=100)
+        
+        self.tree.heading("Zona", text="Zona")
+        self.tree.column("Zona", width=80)
+        
+        self.tree.heading("Est", text="Estado")
+        self.tree.column("Est", width=120)
+        
+        self.tree.tag_configure('valido', background='white')
+        self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red')
+        
+        # EVENTO CLIC EN LA TABLA
+        self.tree.bind("<<TreeviewSelect>>", self.al_seleccionar_cliente)
 
-        if os.path.exists(ruta_logo):
+        scroll = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscroll=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.tree.pack(fill="both", expand=True)
+
+    # ==========================================
+    # LÓGICA DE INTERFAZ Y EVENTOS
+    # ==========================================
+    def cargar_logo(self, parent):
+        """Busca el logo para mostrar en la cabecera."""
+        ruta_1 = mainCode.obtener_ruta_recurso("Imagenes/logo.png")
+        ruta_2 = mainCode.obtener_ruta_recurso("logo.png")
+        
+        ruta_final = ruta_1 if os.path.exists(ruta_1) else ruta_2
+        
+        if os.path.exists(ruta_final):
             try:
-                img = Image.open(ruta_logo).resize((150, 50)) 
-                self.logo_img = ImageTk.PhotoImage(img)
-                tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT, padx=10)
+                img_abierta = Image.open(ruta_final).resize((150, 50))
+                self.logo_img = ImageTk.PhotoImage(img_abierta)
+                tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT)
             except Exception as e:
-                print(f"Error cargando logo: {e}")
+                print(f"Error cargando el logo: {e}")
 
     def verificar_observados(self):
-        reporte = mainCode.revisar_numeros_problematicos()
+        """Abre una ventana con el texto de clientes descartados."""
+        msg = mainCode.revisar_numeros_problematicos()
         vent = tk.Toplevel(self.root)
-        vent.title("Números Observados")
-        vent.geometry("400x400")
-        txt = tk.Text(vent, wrap="word", padx=10, pady=10)
-        txt.pack(fill="both", expand=True)
-        txt.insert("1.0", reporte)
-        txt.config(state="disabled")
+        vent.title("Reporte de Clientes Descartados")
+        vent.geometry("500x400")
+        t = tk.Text(vent, wrap="word", padx=10, pady=10)
+        t.pack(fill="both", expand=True)
+        t.insert("1.0", msg)
+        t.config(state="disabled")
 
     def actualizar_inputs_dinamicos(self, event=None):
+        """Oculta o muestra los campos de texto e imagen según el tipo de mensaje."""
         tipo = self.tipo_mensaje_var.get()
-        self.lbl_dinamico_titulo.pack_forget()
-        self.entry_dinamico_texto.pack_forget()
-        self.btn_subir_imagen.pack_forget()
-        self.lbl_nombre_imagen.pack_forget()
-
+        
+        for widget in self.frame_dinamico.winfo_children(): 
+            widget.pack_forget()
+        
         if tipo == "Gira Vendedor":
             self.lbl_dinamico_titulo.config(text="Nombre del Vendedor que viaja:")
-            self.lbl_dinamico_titulo.pack(anchor="w", padx=5, pady=2)
-            self.entry_dinamico_texto.pack(anchor="w", padx=5, pady=2)
+            self.lbl_dinamico_titulo.pack(anchor="w")
+            self.entry_dinamico_texto.pack(anchor="w")
+            
         elif tipo == "Personalizado":
             self.lbl_dinamico_titulo.config(text="Escribe el mensaje (Caption):")
-            self.lbl_dinamico_titulo.pack(anchor="w", padx=5, pady=2)
-            self.entry_dinamico_texto.pack(anchor="w", padx=5, pady=2)
-            self.btn_subir_imagen.pack(anchor="w", padx=5, pady=5)
-            self.lbl_nombre_imagen.pack(anchor="w", padx=5)
+            self.lbl_dinamico_titulo.pack(anchor="w")
+            self.entry_dinamico_texto.pack(anchor="w")
+            self.btn_subir_imagen.pack(anchor="w", pady=5)
+            self.lbl_nombre_imagen.pack(anchor="w")
 
     def seleccionar_imagen(self):
+        """Abre el explorador de archivos para buscar imágenes .jpg o .png"""
         ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
-        if ruta:
-            self.ruta_imagen_seleccionada = os.path.normpath(ruta)
-            self.lbl_nombre_imagen.config(text=os.path.basename(ruta), fg="green")
+        if ruta: 
+            self.ruta_imagen_seleccionada = ruta
+            self.lbl_nombre_imagen.config(text="Imagen Seleccionada OK", fg="green")
 
+    def _limpiar_panel_telefonos(self):
+        """Borra todos los recuadros de teléfonos del panel inferior."""
+        for widget in self.frame_telefonos.winfo_children(): 
+            widget.destroy()
+            
+        tk.Label(
+            self.frame_telefonos, 
+            text="Haz clic en un cliente de la tabla para ver sus números descartados (rojo) y válidos (verde).", 
+            bg="#f5f5f5", 
+            fg="gray"
+        ).pack(pady=10)
+
+    def al_seleccionar_cliente(self, event):
+        """Cuando el usuario hace clic en una fila, mostramos los teléfonos abajo con recuadros."""
+        seleccion = self.tree.selection()
+        if not seleccion: 
+            return
+        
+        idx = int(seleccion[0])
+        row = self.df_filtrado.loc[idx]
+        
+        # Limpiar panel actual
+        for widget in self.frame_telefonos.winfo_children(): 
+            widget.destroy()
+            
+        tels_raw = row.get('Telefonos_Raw', [])
+        
+        if not isinstance(tels_raw, list) or len(tels_raw) == 0:
+            tk.Label(self.frame_telefonos, text="No se encontró ningún número en las columnas de este cliente.", fg="red", bg="#f5f5f5").pack(side="left")
+            return
+            
+        # Crear los recuadros para cada teléfono
+        for t in tels_raw:
+            es_valido, t_fmt = mainCode.validar_formato_numero(t)
+            
+            if es_valido:
+                bg_color = "#E8F5E9"
+                fg_color = "#2E7D32"
+                border_color = "green"
+                txt_status = f"✅ Enviar a: {t_fmt}"
+            else:
+                bg_color = "#FFEBEE"
+                fg_color = "#C62828"
+                border_color = "red"
+                txt_status = "❌ Descartado"
+                
+            frame_tel = tk.Frame(self.frame_telefonos, bg=bg_color, highlightbackground=border_color, highlightthickness=2, padx=10, pady=5)
+            frame_tel.pack(side="left", padx=10, fill="y")
+            
+            tk.Label(frame_tel, text=t, font=("Segoe UI", 10, "bold"), bg=bg_color, fg=fg_color).pack()
+            tk.Label(frame_tel, text=txt_status, font=("Segoe UI", 8), bg=bg_color, fg=fg_color).pack()
+
+    # ==========================================
+    # CARGA Y FILTRADO DE DATOS
+    # ==========================================
     def cargar_datos(self):
-        self.lbl_status_db.config(text="Validando base de datos...", fg="blue")
+        """Inicia el hilo para cargar el excel sin congelar la app."""
+        self.lbl_status_db.config(text="Cargando base de datos...", fg="blue")
         threading.Thread(target=self._hilo_carga).start()
 
     def _hilo_carga(self):
-        df = mainCode.conectar_y_procesar() 
-        if df.empty:
-            self.root.after(0, lambda: self.lbl_status_db.config(text="Error: No se encuentra Excel", fg="red"))
-            self.root.after(0, lambda: messagebox.showerror("Error", f"No se encuentra 'Base de datos wt.xlsx'\n\nDEBES COPIARLO MANUALMENTE AL LADO DEL EJECUTABLE."))
+        df = mainCode.conectar_y_procesar()
+        
+        if df.empty: 
+            self.root.after(0, lambda: self.lbl_status_db.config(text="Error", fg="red"))
+            self.root.after(0, lambda: messagebox.showerror("Error", "Base vacía o 'Base de datos wt.xlsx' no encontrada en la carpeta."))
             return
         
-        if 'Zona' not in df.columns: df['Zona'] = "N/A"
-        else: df['Zona'] = df['Zona'].astype(str)
+        # Asegurar columnas
+        for col in ['Zona', 'Vendedor']: 
+            if col not in df.columns: 
+                df[col] = "0"
+            df[col] = df[col].astype(str)
 
+        # Precalcular favoritos temporales
         cols_prod = mainCode.identificar_cols_productos(df)
-        favs, secs = [], []
-        for index, row in df.iterrows():
-            p1, p2 = mainCode.obtener_top_personalizados(row, cols_prod)
-            favs.append(p1)
-            secs.append(p2)
-        
-        df['Fav_Temp'] = favs
-        df['Sec_Temp'] = secs
+        df['Fav_Temp'] = "Herramientas"
+        df['Sec_Temp'] = "Accesorios"
         
         self.df_original = df
         self.df_filtrado = df.copy()
-
+        
+        # Llenar filtros
+        self.combo_zona['values'] = ["Todas"] + sorted(df['Zona'].unique().tolist())
+        self.combo_zona.current(0)
+        
+        # Llenar combo herramientas
         self.combo_herramientas['values'] = ["Todos"] + cols_prod
         self.combo_herramientas.current(0)
         
-        zonas = sorted(self.df_original['Zona'].unique().tolist())
-        self.combo_zona['values'] = ["Todas"] + zonas
-        self.combo_zona.current(0)
-        
+        # Actualizar vista
+        self.root.after(0, self._limpiar_panel_telefonos)
         self.root.after(0, self.actualizar_tabla)
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Base cargada: {len(df)} regs", fg="green"))
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} clientes listos", fg="green"))
 
     def actualizar_tabla(self):
-        for i in self.tree.get_children(): self.tree.delete(i)
-        for index, row in self.df_filtrado.iterrows():
-            nombre = row.get('Cliente', '')
-            tel = row.get('Numero de Telefono', '')
-            zona = row.get('Zona', '')
-            p1 = row.get('Fav_Temp', '-')
-            es_valido = row.get('Es_Valido', False)
-            estado_txt = "OK" if es_valido else "INVÁLIDO"
-            tag = "valido" if es_valido else "invalido"
-            self.tree.insert("", "end", values=(nombre, tel, zona, p1, estado_txt), tags=(tag,))
-        self.lbl_conteo.config(text=f"Registros: {len(self.df_filtrado)}")
+        """Dibuja las filas del Dataframe filtrado en el Treeview."""
+        for item in self.tree.get_children(): 
+            self.tree.delete(item)
+            
+        for idx, row in self.df_filtrado.iterrows():
+            tag = "valido" if row['Es_Valido'] else "invalido"
+            
+            if row['Es_Valido']:
+                count = len(row['Telefonos_Validos'])
+                estado_texto = f"OK ({count} nros)"
+            else:
+                estado_texto = "DESCARTADO"
+            
+            valores = (
+                row['Cliente'], 
+                row.get('Tel_Formateado', '-'), 
+                row.get('Vendedor', '-'), 
+                row['Zona'], 
+                estado_texto
+            )
+            
+            self.tree.insert("", "end", iid=idx, values=valores, tags=(tag,))
+            
+        self.lbl_conteo.config(text=f"Registros Visibles: {len(self.df_filtrado)}")
 
     def aplicar_filtros(self, event=None):
-        if self.df_original.empty: return
-        nom = self.entry_nombre.get().lower()
-        zona = self.combo_zona.get()
-        prod = self.combo_herramientas.get()
+        if self.df_original.empty: 
+            return
+            
         df = self.df_original.copy()
-        if nom: df = df[df['Cliente'].str.lower().str.contains(nom, na=False)]
-        if zona != "Todas": df = df[df['Zona'] == zona]
-        if prod != "Todos": df = df[df['Fav_Temp'] == prod]
+        
+        nombre_filtro = self.entry_nombre.get().lower()
+        if nombre_filtro: 
+            df = df[df['Cliente'].str.lower().str.contains(nombre_filtro, na=False)]
+            
+        zona_filtro = self.combo_zona.get()
+        if zona_filtro != "Todas": 
+            df = df[df['Zona'] == zona_filtro]
+            
         self.df_filtrado = df
         self.actualizar_tabla()
+        self._limpiar_panel_telefonos()
 
     def limpiar_filtros(self):
         self.entry_nombre.delete(0, tk.END)
@@ -238,73 +347,115 @@ class WoodToolsApp:
         self.combo_herramientas.current(0)
         self.aplicar_filtros()
 
+    # ==========================================
+    # LÓGICA DE ENVÍO MASIVO
+    # ==========================================
     def iniciar_envio(self):
-        df_a_enviar = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
-        df_invalidos = self.df_filtrado[self.df_filtrado['Es_Valido'] == False]
-        if df_a_enviar.empty:
-            msg = "No hay usuarios válidos."
-            if not df_invalidos.empty: msg += f"\n(Hay {len(df_invalidos)} inválidos)."
-            return messagebox.showwarning("Atención", msg)
+        df_ok = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
+        
+        if df_ok.empty: 
+            return messagebox.showwarning("Atención", "No hay clientes válidos con números correctos para enviar.")
 
+        seleccion_ui = self.combo_vendedor.get()
+        params = {}
+        
+        # --- RESOLUCIÓN DE VENDEDORES (AUTO vs MANUAL) ---
+        if "AUTOMÁTICO" in seleccion_ui:
+            params['modo_vendedor'] = "AUTO"
+            rta = messagebox.askyesno("Vendedores Compartidos", "En el Excel hay vendedores con múltiples teléfonos (ej: código 1/302).\n\n¿Deseas usar el PRIMER número disponible para ellos?\n(Si presionas Sí = Primero, si presionas No = Segundo)")
+            params['preferencia_index'] = 0 if rta else 1
+        else:
+            params['modo_vendedor'] = "MANUAL"
+            numeros = mainCode.DB_VENDEDORES.get(seleccion_ui, [])
+            
+            if len(numeros) > 1:
+                sel = simpledialog.askinteger("Selección de Teléfono Fijo", f"El vendedor que elegiste manualmente tiene 2 números:\n1: {numeros[0]}\n2: {numeros[1]}\n\nEscribe 1 o 2 para elegir cuál usar:", minvalue=1, maxvalue=2)
+                if not sel: 
+                    return
+                params['tel_fijo'] = numeros[sel-1]
+            else:
+                params['tel_fijo'] = numeros[0] if numeros else "5491100000000"
+
+        # --- VALIDACIONES ADICIONALES DEL MENSAJE ---
         tipo = self.tipo_mensaje_var.get()
-        vendedor_key = self.combo_vendedor.get()
-        numeros = mainCode.DB_VENDEDORES.get(vendedor_key, [])
-        tel_vendedor = numeros[0]
-        if len(numeros) > 1:
-            sel = simpledialog.askinteger("Selección", f"1: {numeros[0]}\n2: {numeros[1]}", minvalue=1, maxvalue=2)
-            if not sel: return
-            tel_vendedor = numeros[sel-1]
-
-        params = {'tel_vendedor': tel_vendedor}
         
-        if tipo == "Gira Vendedor":
-            if not self.entry_dinamico_texto.get().strip(): return messagebox.showerror("Error", "Falta vendedor")
-            params['nombre_vendedor'] = self.entry_dinamico_texto.get().strip()
-        elif tipo == "Personalizado":
-            if not self.entry_dinamico_texto.get().strip(): return messagebox.showerror("Error", "Falta texto")
-            if not self.ruta_imagen_seleccionada: return messagebox.showerror("Error", "Falta imagen")
-            params['texto'] = self.entry_dinamico_texto.get().strip()
-            params['ruta_imagen'] = self.ruta_imagen_seleccionada
+        if tipo == "Personalizado" and not self.ruta_imagen_seleccionada: 
+            return messagebox.showerror("Error", "Debes adjuntar una imagen para enviar un mensaje Personalizado.")
+            
+        if tipo in ["Gira Vendedor", "Personalizado"]: 
+            texto = self.entry_dinamico_texto.get().strip()
+            if not texto:
+                return messagebox.showerror("Error", "El campo de texto dinámico no puede estar vacío.")
+            params['texto_extra'] = texto
+            
+            if tipo == "Personalizado": 
+                params['ruta_imagen'] = self.ruta_imagen_seleccionada
 
-        if not messagebox.askyesno("Confirmar", f"Se enviará a {len(df_a_enviar)} contactos válidos.\n({len(df_invalidos)} inválidos omitidos)."):
+        # Confirmación final
+        msg_confirmacion = f"¡ATENCIÓN!\n\nSe procesarán {len(df_ok)} clientes válidos.\n\nRegla activa: Si un cliente tiene 2 teléfonos correctos (ej: local comercial y dueño), el mensaje le llegará a AMBOS números automáticamente.\n\n¿Estás seguro de iniciar?"
+        if not messagebox.askyesno("Confirmar Envío Masivo", msg_confirmacion): 
             return
-
-        threading.Thread(target=self._proceso_envio, args=(tipo, params, df_a_enviar)).start()
-
-    def _proceso_envio(self, tipo, params, df_valido):
-        self.lbl_progreso.config(text="Iniciando...", fg="orange")
         
+        # Inicia hilo
+        threading.Thread(target=self._proceso_envio, args=(tipo, params, df_ok)).start()
+
+    def _proceso_envio(self, tipo, params, df):
+        """Ejecuta las llamadas HTTP a la API de WhatsApp sin trabar la interfaz."""
         media_id = None
-        if tipo == "Personalizado":
-            self.lbl_progreso.config(text="Subiendo imagen...", fg="blue")
-            if not os.path.exists(params['ruta_imagen']): return messagebox.showerror("Error", "Imagen no existe")
+        if tipo == "Personalizado": 
+            self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
             media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
-            if not media_id: return messagebox.showerror("Error", "Fallo subida API")
-
-        top_p1, top_p2, top_p3 = mainCode.obtener_top_3_globales(self.df_original)
-        total = len(df_valido)
-        cnt_ok = 0; cnt_err = 0
+            if not media_id:
+                self.root.after(0, lambda: messagebox.showerror("Error API", "Falló la subida de la imagen a WhatsApp Meta. Abortando."))
+                return
         
-        for i, (idx, row) in enumerate(df_valido.iterrows()):
-            self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Enviando {x+1}/{total}...", fg="blue"))
-            nombre = row['Cliente']
-            tel_fmt = row['Tel_Formateado'] 
-            p1 = row.get('Fav_Temp', 'Prod'); p2 = row.get('Sec_Temp', 'Prod')
-            prods = f"{top_p1}, {top_p2}, {top_p3}" if tipo == "Promociones" else f"{p1} y {p2}" if tipo != "Personalizado" else "promo"
-            footer = mainCode.generar_texto_footer(params['tel_vendedor'], prods)
-            exito = False
-            
-            if tipo == "Promociones": exito, _ = mainCode.enviar_promocion(tel_fmt, top_p1, top_p2, top_p3, footer)
-            elif tipo == "Rescate (Te extrañamos)": exito, _ = mainCode.enviar_rescate(tel_fmt, nombre, p1, footer)
-            elif tipo == "Gira Vendedor": exito, _ = mainCode.enviar_gira(tel_fmt, params['nombre_vendedor'], p1, p2, footer)
-            elif tipo == "Personalizado": exito, _ = mainCode.enviar_personalizado(tel_fmt, params['texto'], media_id, footer)
-            
-            if exito: cnt_ok += 1
-            else: cnt_err += 1
-            time.sleep(1)
+        total_clientes = len(df)
+        clientes_procesados = 0
+        mensajes_ok = 0
+        mensajes_err = 0
+        
+        top = mainCode.obtener_top_3_globales(self.df_original)
 
-        self.root.after(0, lambda: self.lbl_progreso.config(text="Finalizado", fg="green"))
-        self.root.after(0, lambda: messagebox.showinfo("Fin", f"Enviados: {cnt_ok}\nFallidos (API): {cnt_err}"))
+        for _, row in df.iterrows():
+            clientes_procesados += 1
+            self.root.after(0, lambda x=clientes_procesados: self.lbl_progreso.config(text=f"Procesando Cliente {x}/{total_clientes}...", fg="blue"))
+            
+            # 1. Determinar el teléfono del vendedor para el Link
+            if params['modo_vendedor'] == "AUTO":
+                codigo_vendedor_celda = row.get('Vendedor', '0')
+                tel_vendedor = mainCode.obtener_telefono_vendedor(codigo_vendedor_celda, params['preferencia_index'])
+            else:
+                tel_vendedor = params['tel_fijo']
+            
+            prods = f"{top[0]}, {top[1]}"
+            footer = mainCode.generar_texto_footer(tel_vendedor, prods)
+            
+            # 2. Iterar sobre todos los teléfonos VÁLIDOS del cliente
+            validos_del_cliente = row['Telefonos_Validos']
+            
+            if isinstance(validos_del_cliente, list):
+                for tel_destino in validos_del_cliente:
+                    exito = False
+                    
+                    if tipo == "Promociones": 
+                        exito, _ = mainCode.enviar_promocion(tel_destino, top[0], top[1], top[2], footer)
+                    elif tipo == "Rescate (Te extrañamos)": 
+                        exito, _ = mainCode.enviar_rescate(tel_destino, row['Cliente'], row.get('Fav_Temp','-'), footer)
+                    elif tipo == "Gira Vendedor": 
+                        exito, _ = mainCode.enviar_gira(tel_destino, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", footer)
+                    elif tipo == "Personalizado": 
+                        exito, _ = mainCode.enviar_personalizado(tel_destino, params.get('texto_extra',''), media_id, footer)
+
+                    if exito: 
+                        mensajes_ok += 1
+                    else: 
+                        mensajes_err += 1
+                        
+                    # Pausa obligatoria por límites de Meta API
+                    time.sleep(1) 
+
+        self.root.after(0, lambda: self.lbl_progreso.config(text="Proceso Finalizado", fg="green"))
+        self.root.after(0, lambda: messagebox.showinfo("Reporte Final", f"Campaña Finalizada.\n\n📱 Mensajes entregados a la API: {mensajes_ok}\n❌ Errores de API: {mensajes_err}"))
 
 if __name__ == "__main__":
     root = tk.Tk()
