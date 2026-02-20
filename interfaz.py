@@ -7,6 +7,7 @@ import os
 import sys 
 import time
 import ctypes  
+import urllib.parse
 
 import mainCode 
 
@@ -14,28 +15,23 @@ import mainCode
 # LÓGICA PARA RUTAS INTERNAS (IMÁGENES)
 # ==========================================
 def obtener_ruta_interna(ruta_relativa):
-    """
-    Busca archivos que fueron empaquetados DENTRO del .exe (como los logos).
-    Usa la carpeta temporal secreta de PyInstaller (sys._MEIPASS).
-    """
     try:
         ruta_base = sys._MEIPASS
     except Exception:
         ruta_base = os.path.abspath(".")
     return os.path.join(ruta_base, ruta_relativa)
 
-
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp v4.0 - Multi-Teléfonos")
+        self.root.title("Gestor de Marketing WhatsApp v5.0 - Links Autocompletables")
         self.root.geometry("1400x900") 
         
         # ==========================================
         # CONFIGURACIÓN DE ÍCONOS (.ICO) Y BARRA DE TAREAS
         # ==========================================
         try:
-            myappid = 'woodtools.gestormarketing.4.0' 
+            myappid = 'woodtools.gestormarketing.5.0' 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass 
@@ -107,7 +103,7 @@ class WoodToolsApp:
         tk.Label(frame_campana, text="Tipo Mensaje:", bg="#f5f5f5").grid(row=0, column=0, sticky="w")
         self.tipo_mensaje_var = tk.StringVar(value="Promociones")
         
-        opciones_plantillas = ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado"]
+        opciones_plantillas = ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado", "Novedades"]
         self.combo_tipo_mensaje = ttk.Combobox(frame_campana, values=opciones_plantillas, state="readonly", textvariable=self.tipo_mensaje_var, width=25)
         self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=5)
         self.combo_tipo_mensaje.bind("<<ComboboxSelected>>", self.actualizar_inputs_dinamicos)
@@ -119,13 +115,23 @@ class WoodToolsApp:
         self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5)
         self.combo_vendedor.current(0)
 
+        # --- RECUADRO DINÁMICO (COSTADO) ---
         self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5")
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=30, sticky="nesw")
         
-        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5")
+        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5", font=("Arial", 8, "bold"))
         self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=40)
+        
+        # --- NUEVO: CUADRO GRANDE PARA EL MENSAJE PERSONALIZADO ---
+        self.text_dinamico_multilinea = tk.Text(self.frame_dinamico, width=55, height=5, font=("Arial", 10), relief="solid", bd=1)
+        
         self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen", command=self.seleccionar_imagen)
         self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red")
+
+        self.lbl_novedad_subtipo = tk.Label(self.frame_dinamico, text="Tipo de Novedad:", bg="#f5f5f5", font=("Arial", 8, "bold"))
+        self.combo_novedad_subtipo = ttk.Combobox(self.frame_dinamico, values=["Ingresos", "Reposición de stock"], state="readonly", width=30)
+        self.lbl_novedad_herramienta = tk.Label(self.frame_dinamico, text="Herramienta a promocionar:", bg="#f5f5f5", font=("Arial", 8, "bold"))
+        self.combo_novedad_herramienta = ttk.Combobox(self.frame_dinamico, state="readonly", width=30)
 
         self.actualizar_inputs_dinamicos() 
 
@@ -180,26 +186,17 @@ class WoodToolsApp:
     # LÓGICA DE INTERFAZ Y EVENTOS
     # ==========================================
     def cargar_logo(self, parent):
-        """Carga el logo manteniendo la proporción EXACTA original."""
         ruta_1 = obtener_ruta_interna(r"Imagenes\logo.png")
         ruta_2 = obtener_ruta_interna("logo.png")
-        
         ruta_final = ruta_1 if os.path.exists(ruta_1) else ruta_2
         
         if os.path.exists(ruta_final):
             try:
                 img_abierta = Image.open(ruta_final)
-                
-                # --- FÓRMULA MATEMÁTICA PARA MANTENER PROPORCIÓN ---
                 ancho_original, alto_original = img_abierta.size
-                
-                alto_deseado = 65  # Altura perfecta para la cabecera
-                # Calculamos el ancho preservando el "Aspect Ratio"
+                alto_deseado = 65 
                 ancho_proporcional = int((alto_deseado / alto_original) * ancho_original)
-                
-                # Redimensionamos la imagen con la nueva medida exacta
                 img_redimensionada = img_abierta.resize((ancho_proporcional, alto_deseado), Image.Resampling.LANCZOS)
-                # ----------------------------------------------------
                 
                 self.logo_img = ImageTk.PhotoImage(img_redimensionada)
                 tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT, padx=15)
@@ -231,14 +228,27 @@ class WoodToolsApp:
         if tipo == "Gira Vendedor":
             self.lbl_dinamico_titulo.config(text="Nombre del Vendedor que viaja:")
             self.lbl_dinamico_titulo.pack(anchor="w")
-            self.entry_dinamico_texto.pack(anchor="w")
+            self.entry_dinamico_texto.pack(anchor="w", pady=5)
             
         elif tipo == "Personalizado":
             self.lbl_dinamico_titulo.config(text="Escribe el mensaje (Caption):")
             self.lbl_dinamico_titulo.pack(anchor="w")
-            self.entry_dinamico_texto.pack(anchor="w")
+            self.text_dinamico_multilinea.pack(anchor="w", pady=5)
             self.btn_subir_imagen.pack(anchor="w", pady=5)
             self.lbl_nombre_imagen.pack(anchor="w")
+            
+        elif tipo == "Novedades":
+            self.lbl_novedad_subtipo.pack(anchor="w", pady=(0, 2))
+            if self.combo_novedad_subtipo.get() == "":
+                self.combo_novedad_subtipo.current(0)
+            self.combo_novedad_subtipo.pack(anchor="w", pady=(0, 10))
+            
+            self.lbl_novedad_herramienta.pack(anchor="w", pady=(0, 2))
+            herramientas_disponibles = mainCode.identificar_cols_productos(pd.DataFrame())
+            self.combo_novedad_herramienta['values'] = herramientas_disponibles
+            if self.combo_novedad_herramienta.get() == "":
+                self.combo_novedad_herramienta.current(0)
+            self.combo_novedad_herramienta.pack(anchor="w")
 
     def seleccionar_imagen(self):
         ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
@@ -261,7 +271,6 @@ class WoodToolsApp:
         for widget in self.frame_telefonos.winfo_children(): widget.destroy()
             
         tels_raw = row.get('Telefonos_Raw', [])
-        
         if not isinstance(tels_raw, list) or len(tels_raw) == 0:
             tk.Label(self.frame_telefonos, text="No se encontró ningún número en las columnas de este cliente.", fg="red", bg="#f5f5f5").pack(side="left")
             return
@@ -299,8 +308,11 @@ class WoodToolsApp:
             df[col] = df[col].astype(str)
 
         cols_prod = mainCode.identificar_cols_productos(df)
-        df['Fav_Temp'] = "Herramientas"
-        df['Sec_Temp'] = "Accesorios"
+        
+        # ASIGNACIÓN TEMPORAL DE FAVORITOS
+        df['Fav_Temp'] = "Sierras" 
+        df['Sec_Temp'] = "Cuchillas"
+        
         self.df_original = df
         self.df_filtrado = df.copy()
         
@@ -358,30 +370,38 @@ class WoodToolsApp:
         
         if "AUTOMÁTICO" in seleccion_ui:
             params['modo_vendedor'] = "AUTO"
-            rta = messagebox.askyesno("Vendedores Compartidos", "En el Excel hay vendedores con múltiples teléfonos (ej: código 1/302).\n\n¿Deseas usar el PRIMER número disponible para ellos?\n(Si presionas Sí = Primero, si presionas No = Segundo)")
+            rta = messagebox.askyesno("Vendedores Compartidos", "En el Excel el código '0' tiene 2 vendedores.\n\n¿Deseas usar a Valentín (Primer número)?\n(Si presionas Sí = Valentín, si presionas No = Carlos)")
             params['preferencia_index'] = 0 if rta else 1
         else:
             params['modo_vendedor'] = "MANUAL"
             numeros = mainCode.DB_VENDEDORES.get(seleccion_ui, [])
-            if len(numeros) > 1:
-                sel = simpledialog.askinteger("Selección de Teléfono Fijo", f"El vendedor que elegiste manualmente tiene 2 números:\n1: {numeros[0]}\n2: {numeros[1]}\n\nEscribe 1 o 2 para elegir cuál usar:", minvalue=1, maxvalue=2)
-                if not sel: return
-                params['tel_fijo'] = numeros[sel-1]
-            else:
-                params['tel_fijo'] = numeros[0] if numeros else "5491100000000"
+            params['tel_fijo'] = numeros[0] if numeros else "5491145394279"
 
         tipo = self.tipo_mensaje_var.get()
-        if tipo == "Personalizado" and not self.ruta_imagen_seleccionada: 
-            return messagebox.showerror("Error", "Debes adjuntar una imagen para enviar un mensaje Personalizado.")
-            
-        if tipo in ["Gira Vendedor", "Personalizado"]: 
+        
+        if tipo == "Novedades":
+            herramienta_elegida = self.combo_novedad_herramienta.get()
+            params['subtipo_novedad'] = self.combo_novedad_subtipo.get()
+            params['herramienta_novedad'] = herramienta_elegida
+            df_ok = df_ok[df_ok['Fav_Temp'] == herramienta_elegida]
+            if df_ok.empty: return messagebox.showwarning("Filtro Inteligente", f"No se encontraron clientes válidos cuyo producto favorito sea '{herramienta_elegida}'.")
+        
+        elif tipo == "Gira Vendedor": 
             texto = self.entry_dinamico_texto.get().strip()
-            if not texto: return messagebox.showerror("Error", "El campo de texto dinámico no puede estar vacío.")
+            if not texto: return messagebox.showerror("Error", "El nombre del vendedor no puede estar vacío.")
             params['texto_extra'] = texto
-            if tipo == "Personalizado": params['ruta_imagen'] = self.ruta_imagen_seleccionada
+            
+        elif tipo == "Personalizado":
+            if not self.ruta_imagen_seleccionada: 
+                return messagebox.showerror("Error", "Debes adjuntar una imagen para enviar un mensaje Personalizado.")
+            texto = self.text_dinamico_multilinea.get("1.0", tk.END).strip()
+            if not texto: return messagebox.showerror("Error", "El campo de mensaje no puede estar vacío.")
+            params['texto_extra'] = texto
+            params['ruta_imagen'] = self.ruta_imagen_seleccionada
 
         msg_confirmacion = f"¡ATENCIÓN!\n\nSe procesarán {len(df_ok)} clientes válidos.\n\nRegla activa: Si un cliente tiene 2 teléfonos correctos, el mensaje le llegará a AMBOS números automáticamente.\n\n¿Estás seguro de iniciar?"
         if not messagebox.askyesno("Confirmar Envío Masivo", msg_confirmacion): return
+        
         threading.Thread(target=self._proceso_envio, args=(tipo, params, df_ok)).start()
 
     def _proceso_envio(self, tipo, params, df):
@@ -397,31 +417,46 @@ class WoodToolsApp:
         clientes_procesados = 0
         mensajes_ok = 0
         mensajes_err = 0
-        
-        top = mainCode.obtener_top_3_globales(self.df_original)
 
         for _, row in df.iterrows():
             clientes_procesados += 1
             self.root.after(0, lambda x=clientes_procesados: self.lbl_progreso.config(text=f"Procesando Cliente {x}/{total_clientes}...", fg="blue"))
             
+            # 1. Determinar de quién es el Link
             if params['modo_vendedor'] == "AUTO":
                 codigo_vendedor_celda = row.get('Vendedor', '0')
                 tel_vendedor = mainCode.obtener_telefono_vendedor(codigo_vendedor_celda, params['preferencia_index'])
             else:
                 tel_vendedor = params['tel_fijo']
             
-            prods = f"{top[0]}, {top[1]}"
-            footer = mainCode.generar_texto_footer(tel_vendedor, prods)
+            # 2. Generar el enlace inteligente con espacios [ ] para que el cliente llene
+            datos_extra = {
+                'vendedor_nombre': params.get('texto_extra', 'el vendedor'),
+                'herramienta': params.get('herramienta_novedad', 'herramientas'),
+                'subtipo': params.get('subtipo_novedad', '')
+            }
+            link_inteligente = mainCode.generar_link_whatsapp(tel_vendedor, tipo, datos_extra)
             
+            # 3. Enviar
             validos_del_cliente = row['Telefonos_Validos']
-            
             if isinstance(validos_del_cliente, list):
                 for tel_destino in validos_del_cliente:
                     exito = False
-                    if tipo == "Promociones": exito, _ = mainCode.enviar_promocion(tel_destino, top[0], top[1], top[2], footer)
-                    elif tipo == "Rescate (Te extrañamos)": exito, _ = mainCode.enviar_rescate(tel_destino, row['Cliente'], row.get('Fav_Temp','-'), footer)
-                    elif tipo == "Gira Vendedor": exito, _ = mainCode.enviar_gira(tel_destino, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", footer)
-                    elif tipo == "Personalizado": exito, _ = mainCode.enviar_personalizado(tel_destino, params.get('texto_extra',''), media_id, footer)
+                    
+                    if tipo == "Novedades":
+                        exito, _ = mainCode.enviar_novedades(tel_destino, params['subtipo_novedad'], params['herramienta_novedad'], link_inteligente)
+                    else:
+                        # Para las demás plantillas, adjuntamos "Contacto directo:" junto al link
+                        texto_footer = f"Contacto directo: {link_inteligente}"
+                        
+                        if tipo == "Promociones": 
+                            exito, _ = mainCode.enviar_promocion(tel_destino, "Promociones exclusivas", "Herramientas", "Ofertas", texto_footer)
+                        elif tipo == "Rescate (Te extrañamos)": 
+                            exito, _ = mainCode.enviar_rescate(tel_destino, row['Cliente'], row.get('Fav_Temp','-'), texto_footer)
+                        elif tipo == "Gira Vendedor": 
+                            exito, _ = mainCode.enviar_gira(tel_destino, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", texto_footer)
+                        elif tipo == "Personalizado": 
+                            exito, _ = mainCode.enviar_personalizado(tel_destino, params.get('texto_extra',''), media_id, texto_footer)
 
                     if exito: mensajes_ok += 1
                     else: mensajes_err += 1
