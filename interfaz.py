@@ -6,9 +6,24 @@ import threading
 import os
 import sys 
 import time
+import ctypes  
 
-# Importamos nuestro backend completo
 import mainCode 
+
+# ==========================================
+# LÓGICA PARA RUTAS INTERNAS (IMÁGENES)
+# ==========================================
+def obtener_ruta_interna(ruta_relativa):
+    """
+    Busca archivos que fueron empaquetados DENTRO del .exe (como los logos).
+    Usa la carpeta temporal secreta de PyInstaller (sys._MEIPASS).
+    """
+    try:
+        ruta_base = sys._MEIPASS
+    except Exception:
+        ruta_base = os.path.abspath(".")
+    return os.path.join(ruta_base, ruta_relativa)
+
 
 class WoodToolsApp:
     def __init__(self, root):
@@ -16,12 +31,31 @@ class WoodToolsApp:
         self.root.title("Gestor de Marketing WhatsApp v4.0 - Multi-Teléfonos")
         self.root.geometry("1400x900") 
         
+        # ==========================================
+        # CONFIGURACIÓN DE ÍCONOS (.ICO) Y BARRA DE TAREAS
+        # ==========================================
+        try:
+            myappid = 'woodtools.gestormarketing.4.0' 
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass 
+            
+        ruta_ico = obtener_ruta_interna(r"Imagenes\logo.ico")
+        if not os.path.exists(ruta_ico):
+            ruta_ico = obtener_ruta_interna("logo.ico")
+            
+        if os.path.exists(ruta_ico):
+            try:
+                self.root.iconbitmap(ruta_ico)
+            except Exception as e:
+                print(f"Error cargando icono .ico: {e}")
+
         self.df_original = pd.DataFrame()
         self.df_filtrado = pd.DataFrame()
         self.ruta_imagen_seleccionada = None
         
         # ==========================================
-        # 1. CABECERA
+        # 1. CABECERA (LOGO .PNG ARRIBA A LA DERECHA)
         # ==========================================
         frame_top = tk.Frame(root, pady=10, padx=10, bg="#e0e0e0")
         frame_top.pack(fill="x")
@@ -96,7 +130,7 @@ class WoodToolsApp:
         self.actualizar_inputs_dinamicos() 
 
         # ==========================================
-        # 4. BOTÓN DE ENVÍO (PIE DE PÁGINA)
+        # 4. BOTÓN DE ENVÍO
         # ==========================================
         frame_accion = tk.Frame(root, pady=15, bg="#333333")
         frame_accion.pack(fill="x", side="bottom")
@@ -108,7 +142,7 @@ class WoodToolsApp:
         btn_enviar.pack(pady=10)
 
         # ==========================================
-        # 5. PANEL DE DETALLES CON RECUADROS DE COLORES
+        # 5. PANEL DE DETALLES
         # ==========================================
         self.frame_telefonos = tk.LabelFrame(root, text="🔍 Alternativas Encontradas (Clic en la tabla arriba para ver)", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 9, "bold"))
         self.frame_telefonos.pack(fill="x", padx=20, pady=5, side="bottom")
@@ -123,23 +157,18 @@ class WoodToolsApp:
         self.tree = ttk.Treeview(frame_tabla, columns=("Cli", "Tel", "Vend", "Zona", "Est"), show="headings")
         self.tree.heading("Cli", text="Cliente")
         self.tree.column("Cli", width=200)
-        
         self.tree.heading("Tel", text="Se enviará a:")
         self.tree.column("Tel", width=250)
-        
         self.tree.heading("Vend", text="Vendedor (Excel)")
         self.tree.column("Vend", width=100)
-        
         self.tree.heading("Zona", text="Zona")
         self.tree.column("Zona", width=80)
-        
         self.tree.heading("Est", text="Estado")
         self.tree.column("Est", width=120)
         
         self.tree.tag_configure('valido', background='white')
         self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red')
         
-        # EVENTO CLIC EN LA TABLA
         self.tree.bind("<<TreeviewSelect>>", self.al_seleccionar_cliente)
 
         scroll = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
@@ -151,35 +180,51 @@ class WoodToolsApp:
     # LÓGICA DE INTERFAZ Y EVENTOS
     # ==========================================
     def cargar_logo(self, parent):
-        """Busca el logo para mostrar en la cabecera."""
-        ruta_1 = mainCode.obtener_ruta_recurso("Imagenes/logo.png")
-        ruta_2 = mainCode.obtener_ruta_recurso("logo.png")
+        """Carga el logo manteniendo la proporción EXACTA original."""
+        ruta_1 = obtener_ruta_interna(r"Imagenes\logo.png")
+        ruta_2 = obtener_ruta_interna("logo.png")
         
         ruta_final = ruta_1 if os.path.exists(ruta_1) else ruta_2
         
         if os.path.exists(ruta_final):
             try:
-                img_abierta = Image.open(ruta_final).resize((150, 50))
-                self.logo_img = ImageTk.PhotoImage(img_abierta)
-                tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT)
+                img_abierta = Image.open(ruta_final)
+                
+                # --- FÓRMULA MATEMÁTICA PARA MANTENER PROPORCIÓN ---
+                ancho_original, alto_original = img_abierta.size
+                
+                alto_deseado = 65  # Altura perfecta para la cabecera
+                # Calculamos el ancho preservando el "Aspect Ratio"
+                ancho_proporcional = int((alto_deseado / alto_original) * ancho_original)
+                
+                # Redimensionamos la imagen con la nueva medida exacta
+                img_redimensionada = img_abierta.resize((ancho_proporcional, alto_deseado), Image.Resampling.LANCZOS)
+                # ----------------------------------------------------
+                
+                self.logo_img = ImageTk.PhotoImage(img_redimensionada)
+                tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT, padx=15)
             except Exception as e:
                 print(f"Error cargando el logo: {e}")
 
     def verificar_observados(self):
-        """Abre una ventana con el texto de clientes descartados."""
         msg = mainCode.revisar_numeros_problematicos()
         vent = tk.Toplevel(self.root)
         vent.title("Reporte de Clientes Descartados")
         vent.geometry("500x400")
+        
+        try:
+            ruta_ico = obtener_ruta_interna(r"Imagenes\logo.ico")
+            if not os.path.exists(ruta_ico): ruta_ico = obtener_ruta_interna("logo.ico")
+            if os.path.exists(ruta_ico): vent.iconbitmap(ruta_ico)
+        except: pass
+
         t = tk.Text(vent, wrap="word", padx=10, pady=10)
         t.pack(fill="both", expand=True)
         t.insert("1.0", msg)
         t.config(state="disabled")
 
     def actualizar_inputs_dinamicos(self, event=None):
-        """Oculta o muestra los campos de texto e imagen según el tipo de mensaje."""
         tipo = self.tipo_mensaje_var.get()
-        
         for widget in self.frame_dinamico.winfo_children(): 
             widget.pack_forget()
         
@@ -196,36 +241,24 @@ class WoodToolsApp:
             self.lbl_nombre_imagen.pack(anchor="w")
 
     def seleccionar_imagen(self):
-        """Abre el explorador de archivos para buscar imágenes .jpg o .png"""
         ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
         if ruta: 
             self.ruta_imagen_seleccionada = ruta
             self.lbl_nombre_imagen.config(text="Imagen Seleccionada OK", fg="green")
 
     def _limpiar_panel_telefonos(self):
-        """Borra todos los recuadros de teléfonos del panel inferior."""
         for widget in self.frame_telefonos.winfo_children(): 
             widget.destroy()
-            
-        tk.Label(
-            self.frame_telefonos, 
-            text="Haz clic en un cliente de la tabla para ver sus números descartados (rojo) y válidos (verde).", 
-            bg="#f5f5f5", 
-            fg="gray"
-        ).pack(pady=10)
+        tk.Label(self.frame_telefonos, text="Haz clic en un cliente de la tabla para ver sus números descartados (rojo) y válidos (verde).", bg="#f5f5f5", fg="gray").pack(pady=10)
 
     def al_seleccionar_cliente(self, event):
-        """Cuando el usuario hace clic en una fila, mostramos los teléfonos abajo con recuadros."""
         seleccion = self.tree.selection()
-        if not seleccion: 
-            return
+        if not seleccion: return
         
         idx = int(seleccion[0])
         row = self.df_filtrado.loc[idx]
         
-        # Limpiar panel actual
-        for widget in self.frame_telefonos.winfo_children(): 
-            widget.destroy()
+        for widget in self.frame_telefonos.winfo_children(): widget.destroy()
             
         tels_raw = row.get('Telefonos_Raw', [])
         
@@ -233,24 +266,17 @@ class WoodToolsApp:
             tk.Label(self.frame_telefonos, text="No se encontró ningún número en las columnas de este cliente.", fg="red", bg="#f5f5f5").pack(side="left")
             return
             
-        # Crear los recuadros para cada teléfono
         for t in tels_raw:
             es_valido, t_fmt = mainCode.validar_formato_numero(t)
-            
             if es_valido:
-                bg_color = "#E8F5E9"
-                fg_color = "#2E7D32"
-                border_color = "green"
+                bg_color, fg_color, border_color = "#E8F5E9", "#2E7D32", "green"
                 txt_status = f"✅ Enviar a: {t_fmt}"
             else:
-                bg_color = "#FFEBEE"
-                fg_color = "#C62828"
-                border_color = "red"
+                bg_color, fg_color, border_color = "#FFEBEE", "#C62828", "red"
                 txt_status = "❌ Descartado"
                 
             frame_tel = tk.Frame(self.frame_telefonos, bg=bg_color, highlightbackground=border_color, highlightthickness=2, padx=10, pady=5)
             frame_tel.pack(side="left", padx=10, fill="y")
-            
             tk.Label(frame_tel, text=t, font=("Segoe UI", 10, "bold"), bg=bg_color, fg=fg_color).pack()
             tk.Label(frame_tel, text=txt_status, font=("Segoe UI", 8), bg=bg_color, fg=fg_color).pack()
 
@@ -258,85 +284,58 @@ class WoodToolsApp:
     # CARGA Y FILTRADO DE DATOS
     # ==========================================
     def cargar_datos(self):
-        """Inicia el hilo para cargar el excel sin congelar la app."""
         self.lbl_status_db.config(text="Cargando base de datos...", fg="blue")
         threading.Thread(target=self._hilo_carga).start()
 
     def _hilo_carga(self):
         df = mainCode.conectar_y_procesar()
-        
         if df.empty: 
             self.root.after(0, lambda: self.lbl_status_db.config(text="Error", fg="red"))
             self.root.after(0, lambda: messagebox.showerror("Error", "Base vacía o 'Base de datos wt.xlsx' no encontrada en la carpeta."))
             return
         
-        # Asegurar columnas
         for col in ['Zona', 'Vendedor']: 
-            if col not in df.columns: 
-                df[col] = "0"
+            if col not in df.columns: df[col] = "0"
             df[col] = df[col].astype(str)
 
-        # Precalcular favoritos temporales
         cols_prod = mainCode.identificar_cols_productos(df)
         df['Fav_Temp'] = "Herramientas"
         df['Sec_Temp'] = "Accesorios"
-        
         self.df_original = df
         self.df_filtrado = df.copy()
         
-        # Llenar filtros
         self.combo_zona['values'] = ["Todas"] + sorted(df['Zona'].unique().tolist())
         self.combo_zona.current(0)
-        
-        # Llenar combo herramientas
         self.combo_herramientas['values'] = ["Todos"] + cols_prod
         self.combo_herramientas.current(0)
         
-        # Actualizar vista
         self.root.after(0, self._limpiar_panel_telefonos)
         self.root.after(0, self.actualizar_tabla)
         self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} clientes listos", fg="green"))
 
     def actualizar_tabla(self):
-        """Dibuja las filas del Dataframe filtrado en el Treeview."""
-        for item in self.tree.get_children(): 
-            self.tree.delete(item)
+        for item in self.tree.get_children(): self.tree.delete(item)
             
         for idx, row in self.df_filtrado.iterrows():
             tag = "valido" if row['Es_Valido'] else "invalido"
-            
             if row['Es_Valido']:
                 count = len(row['Telefonos_Validos'])
                 estado_texto = f"OK ({count} nros)"
             else:
                 estado_texto = "DESCARTADO"
             
-            valores = (
-                row['Cliente'], 
-                row.get('Tel_Formateado', '-'), 
-                row.get('Vendedor', '-'), 
-                row['Zona'], 
-                estado_texto
-            )
-            
+            valores = (row['Cliente'], row.get('Tel_Formateado', '-'), row.get('Vendedor', '-'), row['Zona'], estado_texto)
             self.tree.insert("", "end", iid=idx, values=valores, tags=(tag,))
             
         self.lbl_conteo.config(text=f"Registros Visibles: {len(self.df_filtrado)}")
 
     def aplicar_filtros(self, event=None):
-        if self.df_original.empty: 
-            return
-            
+        if self.df_original.empty: return
         df = self.df_original.copy()
-        
         nombre_filtro = self.entry_nombre.get().lower()
-        if nombre_filtro: 
-            df = df[df['Cliente'].str.lower().str.contains(nombre_filtro, na=False)]
-            
+        if nombre_filtro: df = df[df['Cliente'].str.lower().str.contains(nombre_filtro, na=False)]
         zona_filtro = self.combo_zona.get()
-        if zona_filtro != "Todas": 
-            df = df[df['Zona'] == zona_filtro]
-            
+        if zona_filtro != "Todas": df = df[df['Zona'] == zona_filtro]
         self.df_filtrado = df
         self.actualizar_tabla()
         self._limpiar_panel_telefonos()
@@ -352,14 +351,11 @@ class WoodToolsApp:
     # ==========================================
     def iniciar_envio(self):
         df_ok = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
-        
-        if df_ok.empty: 
-            return messagebox.showwarning("Atención", "No hay clientes válidos con números correctos para enviar.")
+        if df_ok.empty: return messagebox.showwarning("Atención", "No hay clientes válidos con números correctos para enviar.")
 
         seleccion_ui = self.combo_vendedor.get()
         params = {}
         
-        # --- RESOLUCIÓN DE VENDEDORES (AUTO vs MANUAL) ---
         if "AUTOMÁTICO" in seleccion_ui:
             params['modo_vendedor'] = "AUTO"
             rta = messagebox.askyesno("Vendedores Compartidos", "En el Excel hay vendedores con múltiples teléfonos (ej: código 1/302).\n\n¿Deseas usar el PRIMER número disponible para ellos?\n(Si presionas Sí = Primero, si presionas No = Segundo)")
@@ -367,40 +363,28 @@ class WoodToolsApp:
         else:
             params['modo_vendedor'] = "MANUAL"
             numeros = mainCode.DB_VENDEDORES.get(seleccion_ui, [])
-            
             if len(numeros) > 1:
                 sel = simpledialog.askinteger("Selección de Teléfono Fijo", f"El vendedor que elegiste manualmente tiene 2 números:\n1: {numeros[0]}\n2: {numeros[1]}\n\nEscribe 1 o 2 para elegir cuál usar:", minvalue=1, maxvalue=2)
-                if not sel: 
-                    return
+                if not sel: return
                 params['tel_fijo'] = numeros[sel-1]
             else:
                 params['tel_fijo'] = numeros[0] if numeros else "5491100000000"
 
-        # --- VALIDACIONES ADICIONALES DEL MENSAJE ---
         tipo = self.tipo_mensaje_var.get()
-        
         if tipo == "Personalizado" and not self.ruta_imagen_seleccionada: 
             return messagebox.showerror("Error", "Debes adjuntar una imagen para enviar un mensaje Personalizado.")
             
         if tipo in ["Gira Vendedor", "Personalizado"]: 
             texto = self.entry_dinamico_texto.get().strip()
-            if not texto:
-                return messagebox.showerror("Error", "El campo de texto dinámico no puede estar vacío.")
+            if not texto: return messagebox.showerror("Error", "El campo de texto dinámico no puede estar vacío.")
             params['texto_extra'] = texto
-            
-            if tipo == "Personalizado": 
-                params['ruta_imagen'] = self.ruta_imagen_seleccionada
+            if tipo == "Personalizado": params['ruta_imagen'] = self.ruta_imagen_seleccionada
 
-        # Confirmación final
-        msg_confirmacion = f"¡ATENCIÓN!\n\nSe procesarán {len(df_ok)} clientes válidos.\n\nRegla activa: Si un cliente tiene 2 teléfonos correctos (ej: local comercial y dueño), el mensaje le llegará a AMBOS números automáticamente.\n\n¿Estás seguro de iniciar?"
-        if not messagebox.askyesno("Confirmar Envío Masivo", msg_confirmacion): 
-            return
-        
-        # Inicia hilo
+        msg_confirmacion = f"¡ATENCIÓN!\n\nSe procesarán {len(df_ok)} clientes válidos.\n\nRegla activa: Si un cliente tiene 2 teléfonos correctos, el mensaje le llegará a AMBOS números automáticamente.\n\n¿Estás seguro de iniciar?"
+        if not messagebox.askyesno("Confirmar Envío Masivo", msg_confirmacion): return
         threading.Thread(target=self._proceso_envio, args=(tipo, params, df_ok)).start()
 
     def _proceso_envio(self, tipo, params, df):
-        """Ejecuta las llamadas HTTP a la API de WhatsApp sin trabar la interfaz."""
         media_id = None
         if tipo == "Personalizado": 
             self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
@@ -420,7 +404,6 @@ class WoodToolsApp:
             clientes_procesados += 1
             self.root.after(0, lambda x=clientes_procesados: self.lbl_progreso.config(text=f"Procesando Cliente {x}/{total_clientes}...", fg="blue"))
             
-            # 1. Determinar el teléfono del vendedor para el Link
             if params['modo_vendedor'] == "AUTO":
                 codigo_vendedor_celda = row.get('Vendedor', '0')
                 tel_vendedor = mainCode.obtener_telefono_vendedor(codigo_vendedor_celda, params['preferencia_index'])
@@ -430,28 +413,18 @@ class WoodToolsApp:
             prods = f"{top[0]}, {top[1]}"
             footer = mainCode.generar_texto_footer(tel_vendedor, prods)
             
-            # 2. Iterar sobre todos los teléfonos VÁLIDOS del cliente
             validos_del_cliente = row['Telefonos_Validos']
             
             if isinstance(validos_del_cliente, list):
                 for tel_destino in validos_del_cliente:
                     exito = False
-                    
-                    if tipo == "Promociones": 
-                        exito, _ = mainCode.enviar_promocion(tel_destino, top[0], top[1], top[2], footer)
-                    elif tipo == "Rescate (Te extrañamos)": 
-                        exito, _ = mainCode.enviar_rescate(tel_destino, row['Cliente'], row.get('Fav_Temp','-'), footer)
-                    elif tipo == "Gira Vendedor": 
-                        exito, _ = mainCode.enviar_gira(tel_destino, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", footer)
-                    elif tipo == "Personalizado": 
-                        exito, _ = mainCode.enviar_personalizado(tel_destino, params.get('texto_extra',''), media_id, footer)
+                    if tipo == "Promociones": exito, _ = mainCode.enviar_promocion(tel_destino, top[0], top[1], top[2], footer)
+                    elif tipo == "Rescate (Te extrañamos)": exito, _ = mainCode.enviar_rescate(tel_destino, row['Cliente'], row.get('Fav_Temp','-'), footer)
+                    elif tipo == "Gira Vendedor": exito, _ = mainCode.enviar_gira(tel_destino, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", footer)
+                    elif tipo == "Personalizado": exito, _ = mainCode.enviar_personalizado(tel_destino, params.get('texto_extra',''), media_id, footer)
 
-                    if exito: 
-                        mensajes_ok += 1
-                    else: 
-                        mensajes_err += 1
-                        
-                    # Pausa obligatoria por límites de Meta API
+                    if exito: mensajes_ok += 1
+                    else: mensajes_err += 1
                     time.sleep(1) 
 
         self.root.after(0, lambda: self.lbl_progreso.config(text="Proceso Finalizado", fg="green"))
