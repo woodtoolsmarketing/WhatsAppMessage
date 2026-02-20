@@ -24,14 +24,14 @@ def obtener_ruta_interna(ruta_relativa):
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp v5.0 - Links Autocompletables")
+        self.root.title("Gestor de Marketing WhatsApp v6.0 - Imágenes Globales")
         self.root.geometry("1400x900") 
         
         # ==========================================
         # CONFIGURACIÓN DE ÍCONOS (.ICO) Y BARRA DE TAREAS
         # ==========================================
         try:
-            myappid = 'woodtools.gestormarketing.5.0' 
+            myappid = 'woodtools.gestormarketing.6.0' 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass 
@@ -121,17 +121,18 @@ class WoodToolsApp:
         
         self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5", font=("Arial", 8, "bold"))
         self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=40)
-        
-        # --- NUEVO: CUADRO GRANDE PARA EL MENSAJE PERSONALIZADO ---
         self.text_dinamico_multilinea = tk.Text(self.frame_dinamico, width=55, height=5, font=("Arial", 10), relief="solid", bd=1)
         
-        self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen", command=self.seleccionar_imagen)
-        self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red")
-
+        # Elementos de Novedades
         self.lbl_novedad_subtipo = tk.Label(self.frame_dinamico, text="Tipo de Novedad:", bg="#f5f5f5", font=("Arial", 8, "bold"))
         self.combo_novedad_subtipo = ttk.Combobox(self.frame_dinamico, values=["Ingresos", "Reposición de stock"], state="readonly", width=30)
         self.lbl_novedad_herramienta = tk.Label(self.frame_dinamico, text="Herramienta a promocionar:", bg="#f5f5f5", font=("Arial", 8, "bold"))
         self.combo_novedad_herramienta = ttk.Combobox(self.frame_dinamico, state="readonly", width=30)
+
+        # Botones de Imagen (SIEMPRE VISIBLES AL FINAL)
+        self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen", command=self.seleccionar_imagen)
+        self.btn_quitar_imagen = tk.Button(self.frame_dinamico, text="❌ Quitar Imagen", command=self.quitar_imagen, fg="red")
+        self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red")
 
         self.actualizar_inputs_dinamicos() 
 
@@ -222,9 +223,12 @@ class WoodToolsApp:
 
     def actualizar_inputs_dinamicos(self, event=None):
         tipo = self.tipo_mensaje_var.get()
+        
+        # Limpiar todas las opciones del recuadro dinámico
         for widget in self.frame_dinamico.winfo_children(): 
             widget.pack_forget()
         
+        # 1. MOSTRAR ELEMENTOS DE TEXTO SEGÚN EL TIPO
         if tipo == "Gira Vendedor":
             self.lbl_dinamico_titulo.config(text="Nombre del Vendedor que viaja:")
             self.lbl_dinamico_titulo.pack(anchor="w")
@@ -234,8 +238,6 @@ class WoodToolsApp:
             self.lbl_dinamico_titulo.config(text="Escribe el mensaje (Caption):")
             self.lbl_dinamico_titulo.pack(anchor="w")
             self.text_dinamico_multilinea.pack(anchor="w", pady=5)
-            self.btn_subir_imagen.pack(anchor="w", pady=5)
-            self.lbl_nombre_imagen.pack(anchor="w")
             
         elif tipo == "Novedades":
             self.lbl_novedad_subtipo.pack(anchor="w", pady=(0, 2))
@@ -249,12 +251,35 @@ class WoodToolsApp:
             if self.combo_novedad_herramienta.get() == "":
                 self.combo_novedad_herramienta.current(0)
             self.combo_novedad_herramienta.pack(anchor="w")
+            
+        elif tipo in ["Promociones", "Rescate (Te extrañamos)"]:
+            pass # No requieren inputs de texto adicionales
+
+        # 2. MOSTRAR SIEMPRE EL SEPARADOR Y EL BOTÓN DE IMAGEN AL FINAL
+        ttk.Separator(self.frame_dinamico, orient='horizontal').pack(fill='x', pady=10)
+        
+        # Cambiamos el texto del botón para que el usuario sepa si es obligatorio
+        texto_boton = "📂 Adjuntar Imagen (OBLIGATORIO)" if tipo == "Personalizado" else "📂 Adjuntar Imagen (OPCIONAL)"
+        self.btn_subir_imagen.config(text=texto_boton)
+        self.btn_subir_imagen.pack(anchor="w", pady=(0, 2))
+        
+        if self.ruta_imagen_seleccionada:
+            self.btn_quitar_imagen.pack(anchor="w", pady=(0, 2))
+            
+        self.lbl_nombre_imagen.pack(anchor="w")
 
     def seleccionar_imagen(self):
         ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
         if ruta: 
             self.ruta_imagen_seleccionada = ruta
-            self.lbl_nombre_imagen.config(text="Imagen Seleccionada OK", fg="green")
+            self.lbl_nombre_imagen.config(text="Imagen Lista", fg="green")
+            self.btn_quitar_imagen.pack(anchor="w", pady=(0, 2))
+
+    def quitar_imagen(self):
+        """Permite borrar la imagen si el usuario se equivocó o ya no quiere enviarla."""
+        self.ruta_imagen_seleccionada = None
+        self.lbl_nombre_imagen.config(text="Sin imagen", fg="red")
+        self.btn_quitar_imagen.pack_forget()
 
     def _limpiar_panel_telefonos(self):
         for widget in self.frame_telefonos.winfo_children(): 
@@ -368,6 +393,7 @@ class WoodToolsApp:
         seleccion_ui = self.combo_vendedor.get()
         params = {}
         
+        # 1. DETERMINAR VENDEDOR
         if "AUTOMÁTICO" in seleccion_ui:
             params['modo_vendedor'] = "AUTO"
             rta = messagebox.askyesno("Vendedores Compartidos", "En el Excel el código '0' tiene 2 vendedores.\n\n¿Deseas usar a Valentín (Primer número)?\n(Si presionas Sí = Valentín, si presionas No = Carlos)")
@@ -377,8 +403,13 @@ class WoodToolsApp:
             numeros = mainCode.DB_VENDEDORES.get(seleccion_ui, [])
             params['tel_fijo'] = numeros[0] if numeros else "5491145394279"
 
+        # 2. CAPTURAR IMAGEN (Común para todos)
+        if self.ruta_imagen_seleccionada:
+            params['ruta_imagen'] = self.ruta_imagen_seleccionada
+
         tipo = self.tipo_mensaje_var.get()
         
+        # 3. CAPTURAR DATOS ESPECÍFICOS SEGÚN EL TIPO
         if tipo == "Novedades":
             herramienta_elegida = self.combo_novedad_herramienta.get()
             params['subtipo_novedad'] = self.combo_novedad_subtipo.get()
@@ -397,8 +428,8 @@ class WoodToolsApp:
             texto = self.text_dinamico_multilinea.get("1.0", tk.END).strip()
             if not texto: return messagebox.showerror("Error", "El campo de mensaje no puede estar vacío.")
             params['texto_extra'] = texto
-            params['ruta_imagen'] = self.ruta_imagen_seleccionada
 
+        # 4. CONFIRMAR INICIO
         msg_confirmacion = f"¡ATENCIÓN!\n\nSe procesarán {len(df_ok)} clientes válidos.\n\nRegla activa: Si un cliente tiene 2 teléfonos correctos, el mensaje le llegará a AMBOS números automáticamente.\n\n¿Estás seguro de iniciar?"
         if not messagebox.askyesno("Confirmar Envío Masivo", msg_confirmacion): return
         
@@ -406,11 +437,13 @@ class WoodToolsApp:
 
     def _proceso_envio(self, tipo, params, df):
         media_id = None
-        if tipo == "Personalizado": 
-            self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
+        
+        # Si el usuario seleccionó una imagen (sea opcional u obligatoria), la subimos primero a los servidores de Meta
+        if params.get('ruta_imagen'):
+            self.lbl_progreso.config(text="Subiendo imagen a los servidores de WhatsApp...", fg="blue")
             media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
             if not media_id:
-                self.root.after(0, lambda: messagebox.showerror("Error API", "Falló la subida de la imagen a WhatsApp Meta. Abortando."))
+                self.root.after(0, lambda: messagebox.showerror("Error API", "Falló la subida de la imagen a WhatsApp Meta. Abortando el envío."))
                 return
         
         total_clientes = len(df)
@@ -420,16 +453,14 @@ class WoodToolsApp:
 
         for _, row in df.iterrows():
             clientes_procesados += 1
-            self.root.after(0, lambda x=clientes_procesados: self.lbl_progreso.config(text=f"Procesando Cliente {x}/{total_clientes}...", fg="blue"))
+            self.root.after(0, lambda x=clientes_procesados: self.lbl_progreso.config(text=f"Enviando a Cliente {x}/{total_clientes}...", fg="blue"))
             
-            # 1. Determinar de quién es el Link
             if params['modo_vendedor'] == "AUTO":
                 codigo_vendedor_celda = row.get('Vendedor', '0')
                 tel_vendedor = mainCode.obtener_telefono_vendedor(codigo_vendedor_celda, params['preferencia_index'])
             else:
                 tel_vendedor = params['tel_fijo']
             
-            # 2. Generar el enlace inteligente con espacios [ ] para que el cliente llene
             datos_extra = {
                 'vendedor_nombre': params.get('texto_extra', 'el vendedor'),
                 'herramienta': params.get('herramienta_novedad', 'herramientas'),
@@ -437,16 +468,20 @@ class WoodToolsApp:
             }
             link_inteligente = mainCode.generar_link_whatsapp(tel_vendedor, tipo, datos_extra)
             
-            # 3. Enviar
             validos_del_cliente = row['Telefonos_Validos']
             if isinstance(validos_del_cliente, list):
                 for tel_destino in validos_del_cliente:
                     exito = False
                     
+                    # 1. SI HAY IMAGEN Y NO ES MENSAJE PERSONALIZADO, SE ENVÍA LA IMAGEN SUELTA PRIMERO
+                    if media_id and tipo != "Personalizado":
+                        mainCode.enviar_solo_imagen(tel_destino, media_id)
+                        time.sleep(0.5) # Pausa de medio segundo para que la imagen llegue antes que el texto
+                    
+                    # 2. ENVIAR EL TEXTO O PLANTILLA PRINCIPAL
                     if tipo == "Novedades":
                         exito, _ = mainCode.enviar_novedades(tel_destino, params['subtipo_novedad'], params['herramienta_novedad'], link_inteligente)
                     else:
-                        # Para las demás plantillas, adjuntamos "Contacto directo:" junto al link
                         texto_footer = f"Contacto directo: {link_inteligente}"
                         
                         if tipo == "Promociones": 
@@ -456,11 +491,12 @@ class WoodToolsApp:
                         elif tipo == "Gira Vendedor": 
                             exito, _ = mainCode.enviar_gira(tel_destino, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", texto_footer)
                         elif tipo == "Personalizado": 
+                            # El mensaje personalizado envía la imagen y el texto en la misma burbuja de chat
                             exito, _ = mainCode.enviar_personalizado(tel_destino, params.get('texto_extra',''), media_id, texto_footer)
 
                     if exito: mensajes_ok += 1
                     else: mensajes_err += 1
-                    time.sleep(1) 
+                    time.sleep(1) # Pausa de seguridad anti-spam por límites de la API
 
         self.root.after(0, lambda: self.lbl_progreso.config(text="Proceso Finalizado", fg="green"))
         self.root.after(0, lambda: messagebox.showinfo("Reporte Final", f"Campaña Finalizada.\n\n📱 Mensajes entregados a la API: {mensajes_ok}\n❌ Errores de API: {mensajes_err}"))

@@ -323,3 +323,16 @@ def enviar_novedades(tel, tipo_novedad, herramienta, link_wa):
         "messaging_product": "whatsapp", "to": tel, "type": "text", "text": {"body": txt}
     }
     return _enviar_request(payload)
+
+def enviar_solo_imagen(tel, media_id):
+    """
+    Envía únicamente una imagen (sin texto ni plantilla). 
+    Útil para adjuntar imágenes antes de enviar un mensaje de Novedades o Promoción.
+    """
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": tel,
+        "type": "image",
+        "image": {"id": media_id}
+    }
+    return _enviar_request(payload)
