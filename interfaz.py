@@ -8,7 +8,6 @@ import sys
 import time
 import ctypes  
 import urllib.parse
-import urllib.request
 import subprocess
 from datetime import datetime
 
@@ -27,7 +26,7 @@ def obtener_ruta_interna(ruta_relativa):
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM y Auto-Actualizador")
+        self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM y Auto-Compilador Git")
         self.root.geometry("1400x900") 
         
         self.cancelar_envio = False
@@ -77,7 +76,7 @@ class WoodToolsApp:
         btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte Mensual / Anual", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
         
-        # BOTÓN NUEVO: ACTUALIZADOR AUTOMÁTICO
+        # BOTÓN NUEVO: ACTUALIZADOR LOCAL CON GIT
         btn_actualizar = tk.Button(frame_top, text="⬇️ Actualizar Programa", command=self.actualizar_programa, bg="#607D8B", fg="white", font=("Segoe UI", 10, "bold"))
         btn_actualizar.pack(side=tk.RIGHT, padx=20)
         
@@ -289,46 +288,78 @@ class WoodToolsApp:
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
 
     # ==========================================
-    # ACTUALIZADOR AUTOMÁTICO DE GITHUB
+    # NUEVO ACTUALIZADOR: GIT PULL + PYINSTALLER LOCAL
     # ==========================================
     def actualizar_programa(self):
-        msg = "¿Deseas descargar e instalar la última versión desde GitHub?\n\nEl programa se cerrará unos segundos y se volverá a abrir automáticamente."
-        if not messagebox.askyesno("Actualizador Automático", msg): 
-            return
+        # 1. IDENTIFICAR LA CARPETA RAÍZ DEL PROYECTO
+        if getattr(sys, 'frozen', False):
+            # Si corre desde el .exe en /dist, la raíz es dos carpetas arriba
+            base_dir = os.path.dirname(os.path.dirname(sys.executable))
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
 
-        self.lbl_progreso.config(text="Descargando actualización (esto puede tardar unos minutos)...", fg="blue")
-        self.root.update() 
+        self.lbl_progreso.config(text="Buscando actualizaciones en GitHub...", fg="blue")
+        self.root.update()
 
         try:
-            # === URL RAW DIRECTA AL ARCHIVO .EXE EN LA RAMA PRUEBA ===
-# === URL RAW DIRECTA AL ARCHIVO .EXE EN LA RAMA PRUEBA ===
-            url_descarga = "https://github.com/woodtoolsmarketing/WhatsAppMessage/raw/prueba/dist/GestorMarketing_v5.exe"            
-            nombre_actual = os.path.basename(sys.executable)
-            
-            if not getattr(sys, 'frozen', False):
-                messagebox.showinfo("Modo Desarrollador", "Estás ejecutando el código desde Python (.py). El actualizador solo funciona cuando el programa ya está compilado como .exe")
+            # Bandera para evitar que se abra una ventana negra al hacer las consultas a Git
+            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+
+            # 2. CONECTAR A GITHUB Y BAJAR INFORMACIÓN
+            subprocess.run(["git", "fetch", "origin", "prueba"], cwd=base_dir, creationflags=creationflags)
+
+            # 3. COMPARAR VERSIÓN LOCAL VS GITHUB
+            local = subprocess.run(["git", "rev-parse", "HEAD"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags).stdout.strip()
+            remoto = subprocess.run(["git", "rev-parse", "origin/prueba"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags).stdout.strip()
+
+            if local == remoto:
+                messagebox.showinfo("Actualización", "PROGRAMA SIN ACTUALIZACIONES")
                 self.lbl_progreso.config(text="Sistema listo.", fg="white")
                 return
 
-            nombre_nuevo = "Actualizacion_Temp.exe"
+            # SI HAY ACTUALIZACIONES, PROCEDEMOS
+            msg = "Se encontraron actualizaciones en el código.\n\nEl programa se cerrará para descargar los cambios y volver a compilarse (puede tardar 1 o 2 minutos). Verás una pantalla negra mientras compila."
+            if not messagebox.askyesno("Actualización Disponible", msg): 
+                self.lbl_progreso.config(text="Sistema listo.", fg="white")
+                return
 
-            urllib.request.urlretrieve(url_descarga, nombre_nuevo)
-
-            bat_path = "actualizador.bat"
-            with open(bat_path, "w") as bat_file:
+            # 4. CREAR SCRIPT BAT PARA COMPILAR EN SEGUNDO PLANO
+            bat_path = os.path.join(base_dir, "actualizador.bat")
+            with open(bat_path, "w", encoding="utf-8") as bat_file:
                 bat_file.write(f"""@echo off
+color 0A
+title Actualizador y Compilador WoodTools
+echo ========================================================
+echo        ACTUALIZANDO EL SISTEMA DESDE GITHUB
+echo ========================================================
+echo.
+echo Esperando a que el programa se cierre...
 timeout /t 3 /nobreak > NUL
-del "{nombre_actual}"
-ren "{nombre_nuevo}" "{nombre_actual}"
-start "" "{nombre_actual}"
+
+cd /d "{base_dir}"
+
+echo.
+echo [1/2] Descargando ultimos cambios de codigo...
+git pull origin prueba
+
+echo.
+echo [2/2] Compilando el nuevo archivo .exe (Esto puede tardar unos minutos)...
+pyinstaller --clean --noconfirm --onefile --windowed --name "GestorMarketing_v5" --icon="Imagenes\logo.ico" --add-data "Imagenes;Imagenes" interfaz.py
+
+echo.
+echo ========================================================
+echo  ¡COMPILACION FINALIZADA CON EXITO! Abriendo programa...
+echo ========================================================
+start "" "dist\GestorMarketing_v5.exe"
 del "%~f0"
 """)
-            subprocess.Popen([bat_path], shell=True)
+            # Lanzamos el script y matamos el programa actual
+            subprocess.Popen([bat_path], shell=True, cwd=base_dir)
             self.root.destroy()
             sys.exit()
 
         except Exception as e:
-            messagebox.showerror("Error de Actualización", f"No se pudo descargar de GitHub. Asegúrate de que el repositorio esté público y conectado a internet.\n\nDetalle: {e}")
+            messagebox.showerror("Error", f"No se pudo completar el proceso con Git.\n\nAsegúrate de tener Git instalado y configurado.\nDetalle técnico: {e}")
             self.lbl_progreso.config(text="Sistema listo.", fg="white")
 
     # ==========================================
