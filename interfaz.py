@@ -309,6 +309,7 @@ class WoodToolsApp:
                 messagebox.showinfo("Modo Desarrollador", "Estás ejecutando el código desde Python (.py). El actualizador solo funciona cuando el programa ya está compilado como .exe")
                 self.lbl_progreso.config(text="Sistema listo.", fg="white")
                 return
+        
 
             nombre_nuevo = "Actualizacion_Temp.exe"
 
