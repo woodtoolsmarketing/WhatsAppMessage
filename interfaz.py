@@ -8,6 +8,8 @@ import sys
 import time
 import ctypes  
 import urllib.parse
+import urllib.request
+import subprocess
 from datetime import datetime
 
 import mainCode 
@@ -25,7 +27,7 @@ def obtener_ruta_interna(ruta_relativa):
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp v10.0 - CRM Anual y Exportación")
+        self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM y Auto-Actualizador")
         self.root.geometry("1400x900") 
         
         self.cancelar_envio = False
@@ -37,7 +39,7 @@ class WoodToolsApp:
         # CONFIGURACIÓN DE ÍCONOS (.ICO) Y BARRA DE TAREAS
         # ==========================================
         try:
-            myappid = 'woodtools.gestormarketing.10.0' 
+            myappid = 'woodtools.gestormarketing.11.0' 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception: 
             pass 
@@ -46,13 +48,10 @@ class WoodToolsApp:
         if not os.path.exists(ruta_ico): 
             ruta_ico = obtener_ruta_interna("logo.ico")
             
-        # NUEVA LÓGICA PARA FORZAR EL ÍCONO EN LA BARRA DE TAREAS DE WINDOWS
+        # LÓGICA PARA FORZAR EL ÍCONO EN LA BARRA DE TAREAS DE WINDOWS
         if os.path.exists(ruta_ico):
             try: 
-                # 1. Ícono para la barra superior de la ventana
                 self.root.iconbitmap(ruta_ico)
-                
-                # 2. Ícono FORZADO para la barra de tareas (usando la imagen en crudo)
                 icono_barra = ImageTk.PhotoImage(Image.open(ruta_ico))
                 self.root.iconphoto(False, icono_barra)
             except Exception as e: 
@@ -77,6 +76,10 @@ class WoodToolsApp:
         
         btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte Mensual / Anual", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
+        
+        # BOTÓN NUEVO: ACTUALIZADOR AUTOMÁTICO
+        btn_actualizar = tk.Button(frame_top, text="⬇️ Actualizar Programa", command=self.actualizar_programa, bg="#607D8B", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_actualizar.pack(side=tk.RIGHT, padx=20)
         
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="gray", bg="#e0e0e0")
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
@@ -259,7 +262,7 @@ class WoodToolsApp:
     
     def _hilo_carga(self):
         df = mainCode.conectar_y_procesar()
-        if df.empty: return messagebox.showerror("Error", "Base vacía.")
+        if df.empty: return messagebox.showerror("Error", "Base vacía o no se encontró 'Base de datos wt.xlsx'.")
         for c in ['Zona', 'Vendedor']: df[c] = df[c].fillna("0").astype(str)
         df['Fav_Temp'] = "Sierras"; df['Sec_Temp'] = "Cuchillas"
         self.df_original = df; self.df_filtrado = df.copy()
@@ -286,7 +289,50 @@ class WoodToolsApp:
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
 
     # ==========================================
-    # LÓGICA DE EXPORTACIÓN (ORGANIZADA POR MESES Y TANDAS)
+    # ACTUALIZADOR AUTOMÁTICO DE GITHUB
+    # ==========================================
+    def actualizar_programa(self):
+        msg = "¿Deseas descargar e instalar la última versión desde GitHub?\n\nEl programa se cerrará unos segundos y se volverá a abrir automáticamente."
+        if not messagebox.askyesno("Actualizador Automático", msg): 
+            return
+
+        self.lbl_progreso.config(text="Descargando actualización (esto puede tardar unos minutos)...", fg="blue")
+        self.root.update() 
+
+        try:
+            # === URL RAW DIRECTA AL ARCHIVO .EXE EN LA RAMA PRUEBA ===
+# === URL RAW DIRECTA AL ARCHIVO .EXE EN LA RAMA PRUEBA ===
+            url_descarga = "https://github.com/woodtoolsmarketing/WhatsAppMessage/raw/prueba/dist/GestorMarketing_v5.exe"            
+            nombre_actual = os.path.basename(sys.executable)
+            
+            if not getattr(sys, 'frozen', False):
+                messagebox.showinfo("Modo Desarrollador", "Estás ejecutando el código desde Python (.py). El actualizador solo funciona cuando el programa ya está compilado como .exe")
+                self.lbl_progreso.config(text="Sistema listo.", fg="white")
+                return
+
+            nombre_nuevo = "Actualizacion_Temp.exe"
+
+            urllib.request.urlretrieve(url_descarga, nombre_nuevo)
+
+            bat_path = "actualizador.bat"
+            with open(bat_path, "w") as bat_file:
+                bat_file.write(f"""@echo off
+timeout /t 3 /nobreak > NUL
+del "{nombre_actual}"
+ren "{nombre_nuevo}" "{nombre_actual}"
+start "" "{nombre_actual}"
+del "%~f0"
+""")
+            subprocess.Popen([bat_path], shell=True)
+            self.root.destroy()
+            sys.exit()
+
+        except Exception as e:
+            messagebox.showerror("Error de Actualización", f"No se pudo descargar de GitHub. Asegúrate de que el repositorio esté público y conectado a internet.\n\nDetalle: {e}")
+            self.lbl_progreso.config(text="Sistema listo.", fg="white")
+
+    # ==========================================
+    # LÓGICA DE EXPORTACIÓN (MESES Y TANDAS)
     # ==========================================
     def abrir_ventana_exportacion(self):
         tandas_disponibles = mainCode.obtener_tandas_campanas()
@@ -330,9 +376,8 @@ class WoodToolsApp:
             t_vend = tanda['vendedor_asignado']
             t_tot = tanda['total_msgs']
             t_estado_crudo = tanda['estado_tanda']
-            t_mes_anio = tanda['mes'] # Viene como YYYY-MM
+            t_mes_anio = tanda['mes'] 
             
-            # --- AGRUPACIÓN VISUAL POR MESES ---
             if t_mes_anio != ultimo_mes_visto:
                 if t_mes_anio:
                     anio, mes_num = t_mes_anio.split('-')
@@ -340,24 +385,20 @@ class WoodToolsApp:
                     tk.Label(scrollable_frame, text=f"--- {nombre_mes} {anio} ---", font=("Arial", 10, "bold"), fg="#1976D2").pack(anchor="w", pady=(15, 5))
                 ultimo_mes_visto = t_mes_anio
             
-            # Buscar nombre del vendedor
             nombre_vendedor = "Varios"
             for nombre, numeros in mainCode.DB_VENDEDORES.items():
                 if t_vend in numeros:
                     nombre_vendedor = nombre
                     break
                     
-            # Formatear el estado para mostrarlo entre paréntesis tal como se solicitó
             estado_formateado = f"({t_estado_crudo})" if t_estado_crudo else "(SIN ESTADO)"
-            
             texto_label = f"[{t_fecha[:10]}] {t_tipo} - {nombre_vendedor} ({t_tot} msjs) {estado_formateado}"
             
             var = tk.BooleanVar(value=True) 
             self.check_vars[t_id] = var
             ttk.Checkbutton(scrollable_frame, text=texto_label, variable=var).pack(anchor="w", pady=2, padx=15)
             
-        btn_generar = tk.Button(vent_exportar, text="📥 Generar Excel", bg="#4CAF50", fg="white", font=("bold", 11), 
-                                command=lambda: self._ejecutar_exportacion_filtrada(vent_exportar))
+        btn_generar = tk.Button(vent_exportar, text="📥 Generar Excel", bg="#4CAF50", fg="white", font=("bold", 11), command=lambda: self._ejecutar_exportacion_filtrada(vent_exportar))
         btn_generar.pack(pady=20)
 
     def _ejecutar_exportacion_filtrada(self, ventana):
@@ -389,7 +430,6 @@ class WoodToolsApp:
                     nombre_vend = nombre.upper()
                     break
             
-            # EL SEPARADOR VISUAL EXACTO QUE PEDISTE
             texto_separador = f"CAMPAÑA DEL DÍA [{fecha_campana}] - {tipo_campana} DE {nombre_vend}"
             
             datos_para_excel.append({
@@ -497,7 +537,6 @@ class WoodToolsApp:
         ok = 0
         err = 0
         
-        # Variables para rastrear el estado global de la campaña
         hubo_error_servidor = False
         hubo_error_cliente = False
         
@@ -540,7 +579,6 @@ class WoodToolsApp:
                 else: 
                     err += 1
                     estado_individual = tipo_error
-                    # Clasificar para el estado general de la tanda
                     if tipo_error == "ERROR DEL CLIENTE":
                         hubo_error_cliente = True
                     else:
@@ -550,7 +588,6 @@ class WoodToolsApp:
                 mainCode.registrar_envio_db(id_tanda_actual, row['Cliente'], t, tel_v, tipo, herramienta_usada, estado_individual)
                 time.sleep(1)
 
-        # Determinar el estado FINAL de la Tanda completa
         if self.cancelar_envio:
             estado_final_tanda = "CAMPAÑA CANCELADA"
         elif hubo_error_servidor:
@@ -560,10 +597,8 @@ class WoodToolsApp:
         else:
             estado_final_tanda = "ENVIADO CON EXITO"
             
-        # Actualizar la base de datos con el estado global de esta campaña
         mainCode.actualizar_estado_tanda(id_tanda_actual, estado_final_tanda)
 
-        # Restaurar botones
         self.root.after(0, lambda: self.btn_enviar.config(state="normal"))
         self.root.after(0, lambda: self.btn_cancelar.config(state="disabled", text="🛑 CANCELAR ENVÍO"))
         
