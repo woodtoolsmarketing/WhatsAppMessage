@@ -323,7 +323,7 @@ class WoodToolsApp:
                 self.lbl_progreso.config(text="Sistema listo.", fg="white")
                 return
 
-            # 4. CREAR SCRIPT BAT PARA COMPILAR EN SEGUNDO PLANO
+# 4. CREAR SCRIPT BAT PARA COMPILAR EN SEGUNDO PLANO
             bat_path = os.path.join(base_dir, "actualizador.bat")
             with open(bat_path, "w", encoding="utf-8") as bat_file:
                 bat_file.write(f"""@echo off
@@ -335,6 +335,12 @@ echo ========================================================
 echo.
 echo Esperando a que el programa se cierre...
 timeout /t 3 /nobreak > NUL
+
+:: AQUI ESTA LA MAGIA PARA EVITAR EL ERROR DE LA DLL (Lavado de cerebro)
+set _MEIPASS2=
+set _MEIPASS=
+set PYTHONPATH=
+set PYTHONHOME=
 
 cd /d "{base_dir}"
 
@@ -357,7 +363,6 @@ del "%~f0"
             subprocess.Popen([bat_path], shell=True, cwd=base_dir)
             self.root.destroy()
             sys.exit()
-
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo completar el proceso con Git.\n\nAsegúrate de tener Git instalado y configurado.\nDetalle técnico: {e}")
             self.lbl_progreso.config(text="Sistema listo.", fg="white")
