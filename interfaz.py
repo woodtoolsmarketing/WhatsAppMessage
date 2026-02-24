@@ -12,9 +12,6 @@ from datetime import datetime
 
 import mainCode 
 
-# ==========================================
-# LÓGICA PARA RUTAS INTERNAS (IMÁGENES)
-# ==========================================
 def obtener_ruta_interna(ruta_relativa):
     try:
         ruta_base = sys._MEIPASS
@@ -29,31 +26,24 @@ class WoodToolsApp:
         self.root.geometry("1400x900") 
         
         self.cancelar_envio = False
+        self.tipo_base_actual = "clientes" # Por defecto arranca asumiendo clientes
         
-        # Iniciar la base de datos para asegurar persistencia
         mainCode.inicializar_db()
         
-        # ==========================================
-        # CONFIGURACIÓN DE ÍCONOS (.ICO) Y BARRA DE TAREAS
-        # ==========================================
         try:
             myappid = 'woodtools.gestormarketing.11.0' 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        except Exception: 
-            pass 
+        except Exception: pass 
             
         ruta_ico = obtener_ruta_interna(r"Imagenes\logo.ico")
-        if not os.path.exists(ruta_ico): 
-            ruta_ico = obtener_ruta_interna("logo.ico")
+        if not os.path.exists(ruta_ico): ruta_ico = obtener_ruta_interna("logo.ico")
             
-        # LÓGICA PARA FORZAR EL ÍCONO EN LA BARRA DE TAREAS DE WINDOWS
         if os.path.exists(ruta_ico):
             try: 
                 self.root.iconbitmap(ruta_ico)
                 icono_barra = ImageTk.PhotoImage(Image.open(ruta_ico))
                 self.root.iconphoto(False, icono_barra)
-            except Exception as e: 
-                print(f"Error cargando icono: {e}")
+            except Exception as e: print(f"Error cargando icono: {e}")
 
         self.df_original = pd.DataFrame()
         self.df_filtrado = pd.DataFrame()
@@ -66,7 +56,7 @@ class WoodToolsApp:
         frame_top.pack(fill="x")
         self.cargar_logo(frame_top)
 
-        btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base", command=self.cargar_datos, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base", command=self.abrir_selector_bases, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
         
         btn_verificar = tk.Button(frame_top, text="🔍 Descartes", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
@@ -89,7 +79,7 @@ class WoodToolsApp:
         self.entry_nombre.grid(row=0, column=1, padx=5)
         self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
         
-        tk.Label(frame_filtros, text="Zona:").grid(row=0, column=2)
+        tk.Label(frame_filtros, text="Zona/Interés:").grid(row=0, column=2)
         self.combo_zona = ttk.Combobox(frame_filtros, state="readonly", width=10)
         self.combo_zona.grid(row=0, column=3)
         self.combo_zona.bind("<<ComboboxSelected>>", self.aplicar_filtros)
@@ -111,7 +101,8 @@ class WoodToolsApp:
 
         tk.Label(frame_campana, text="Tipo Mensaje:", bg="#f5f5f5").grid(row=0, column=0, sticky="w")
         self.tipo_mensaje_var = tk.StringVar(value="Promociones")
-        self.combo_tipo_mensaje = ttk.Combobox(frame_campana, values=["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado", "Novedades"], state="readonly", textvariable=self.tipo_mensaje_var, width=25)
+        # SE AGREGÓ "Recotización"
+        self.combo_tipo_mensaje = ttk.Combobox(frame_campana, values=["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado", "Novedades", "Recotización"], state="readonly", textvariable=self.tipo_mensaje_var, width=25)
         self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=5)
         self.combo_tipo_mensaje.bind("<<ComboboxSelected>>", self.actualizar_inputs_dinamicos)
 
@@ -170,7 +161,7 @@ class WoodToolsApp:
         self.tree.heading("Cli", text="Cliente"); self.tree.column("Cli", width=200)
         self.tree.heading("Tel", text="Se enviará a:"); self.tree.column("Tel", width=250)
         self.tree.heading("Vend", text="Vendedor"); self.tree.column("Vend", width=100)
-        self.tree.heading("Zona", text="Zona"); self.tree.column("Zona", width=80)
+        self.tree.heading("Zona", text="Zona"); self.tree.column("Zona", width=120)
         self.tree.heading("Est", text="Estado"); self.tree.column("Est", width=120)
         self.tree.tag_configure('valido', background='white'); self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red')
         self.tree.bind("<<TreeviewSelect>>", self.al_seleccionar_cliente)
@@ -216,12 +207,18 @@ class WoodToolsApp:
             self.lbl_novedad_herramienta.pack(anchor="w"); self.combo_novedad_herramienta.pack(anchor="w")
             self.combo_novedad_herramienta['values'] = mainCode.identificar_cols_productos(pd.DataFrame())
             if not self.combo_novedad_herramienta.get(): self.combo_novedad_herramienta.current(0)
+        elif tipo == "Recotización":
+            tk.Label(self.frame_dinamico, text="OJO: Se enviará plantilla pre-aprobada.", fg="red", bg="#f5f5f5").pack(anchor="w", pady=5)
+            tk.Label(self.frame_dinamico, text="El link apuntará automáticamente a Emmanuel.", fg="blue", bg="#f5f5f5").pack(anchor="w")
 
         ttk.Separator(self.frame_dinamico, orient='horizontal').pack(fill='x', pady=10)
-        self.btn_subir_imagen.config(text="📂 Adjuntar Imagen (OBLIGATORIO)" if tipo == "Personalizado" else "📂 Adjuntar Imagen (OPCIONAL)")
-        self.btn_subir_imagen.pack(anchor="w", pady=(0,2))
-        if self.ruta_imagen_seleccionada: self.btn_quitar_imagen.pack(anchor="w", pady=(0,2))
-        self.lbl_nombre_imagen.pack(anchor="w")
+        
+        # Ocultamos la imagen para recotización porque es una plantilla de texto
+        if tipo != "Recotización":
+            self.btn_subir_imagen.config(text="📂 Adjuntar Imagen (OBLIGATORIO)" if tipo == "Personalizado" else "📂 Adjuntar Imagen (OPCIONAL)")
+            self.btn_subir_imagen.pack(anchor="w", pady=(0,2))
+            if self.ruta_imagen_seleccionada: self.btn_quitar_imagen.pack(anchor="w", pady=(0,2))
+            self.lbl_nombre_imagen.pack(anchor="w")
 
     def seleccionar_imagen(self):
         ruta = filedialog.askopenfilename(filetypes=[("IMG", "*.jpg *.jpeg *.png")])
@@ -250,22 +247,64 @@ class WoodToolsApp:
             tk.Label(f, text=f"✅ {fmt}" if valido else "❌", bg=bg, fg=fg).pack()
 
     # ==========================================
-    # CARGA Y FILTRADO
+    # NUEVO SELECTOR DE BASES
     # ==========================================
-    def cargar_datos(self): threading.Thread(target=self._hilo_carga).start()
+    def abrir_selector_bases(self):
+        vent_selector = tk.Toplevel(self.root)
+        vent_selector.title("Selector de Bases de Datos")
+        vent_selector.geometry("400x200")
+        vent_selector.configure(bg="#f5f5f5")
+        
+        tk.Label(vent_selector, text="¿Qué base de datos deseas procesar?", font=("Segoe UI", 12, "bold"), bg="#f5f5f5").pack(pady=20)
+        
+        btn_clientes = tk.Button(vent_selector, text="📘 Base de Clientes (wt)", width=25, bg="#4CAF50", fg="white", font=("bold"), 
+                                 command=lambda: self._iniciar_carga("Base de datos wt.xlsx", "clientes", vent_selector))
+        btn_clientes.pack(pady=5)
+        
+        btn_prospectos = tk.Button(vent_selector, text="📙 Base de Prospectos (wt)", width=25, bg="#FF9800", fg="white", font=("bold"), 
+                                   command=lambda: self._iniciar_carga("Base de prospectos wt.xlsx", "prospectos", vent_selector)) 
+        btn_prospectos.pack(pady=5)
+
+    def _iniciar_carga(self, archivo, tipo, ventana):
+        ventana.destroy()
+        self.tipo_base_actual = tipo
+        threading.Thread(target=self._hilo_carga, args=(archivo, tipo)).start()
     
-    def _hilo_carga(self):
-        df = mainCode.conectar_y_procesar()
-        if df.empty: return messagebox.showerror("Error", "Base vacía o no se encontró 'Base de datos wt.xlsx'.")
+    def _hilo_carga(self, archivo, tipo):
+        df = mainCode.conectar_y_procesar(archivo, tipo)
+        if df.empty: 
+            return self.root.after(0, lambda: messagebox.showerror("Error", f"Base vacía o no se encontró '{archivo}' en la carpeta raíz ni en 'dist'."))
+            
         for c in ['Zona', 'Vendedor']: df[c] = df[c].fillna("0").astype(str)
-        df['Fav_Temp'] = "Sierras"; df['Sec_Temp'] = "Cuchillas"
+        
+        if tipo == "clientes":
+            df['Fav_Temp'] = "Sierras"
+            df['Sec_Temp'] = "Cuchillas"
+        
         self.df_original = df; self.df_filtrado = df.copy()
-        self.combo_zona['values'] = ["Todas"] + sorted(df['Zona'].unique().tolist()); self.combo_zona.current(0)
-        self.combo_herramientas['values'] = ["Todos"] + mainCode.identificar_cols_productos(df); self.combo_herramientas.current(0)
+        
         self.root.after(0, self.actualizar_tabla)
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} regs", fg="green"))
+        
+        # Actualizamos filtros dependiendo de la base
+        zonas_unicas = ["Todas"] + sorted(df['Zona'].unique().tolist())
+        self.root.after(0, lambda: self.combo_zona.config(values=zonas_unicas))
+        self.root.after(0, lambda: self.combo_zona.current(0))
+        
+        herramientas = ["Todos"] + mainCode.identificar_cols_productos(df)
+        self.root.after(0, lambda: self.combo_herramientas.config(values=herramientas))
+        self.root.after(0, lambda: self.combo_herramientas.current(0))
+        
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} regs ({tipo.upper()})", fg="green"))
 
     def actualizar_tabla(self):
+        # Adaptamos los títulos según la base elegida
+        if self.tipo_base_actual == "prospectos":
+            self.tree.heading("Cli", text="Nombre del Prospecto")
+            self.tree.heading("Zona", text="Herramienta de Interés")
+        else:
+            self.tree.heading("Cli", text="Cliente")
+            self.tree.heading("Zona", text="Zona")
+
         for i in self.tree.get_children(): self.tree.delete(i)
         for idx, row in self.df_filtrado.iterrows():
             tag = "valido" if row['Es_Valido'] else "invalido"
@@ -497,9 +536,14 @@ class WoodToolsApp:
                 
             self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Cliente {x+1}/{tot}...", fg="blue"))
             
-            tel_v = mainCode.obtener_telefono_vendedor(row.get('Vendedor','0'), params['preferencia_index']) if params['modo_vendedor'] == "AUTO" else params['tel_fijo']
+            # MAGIA RECOTIZACIÓN: Fuerzo el celular a Emmanuel si es prospecto
+            if tipo == "Recotización":
+                tel_v = mainCode.DB_VENDEDORES["Emmanuel"][0]
+                d_extra = {'cliente_nombre': row['Cliente'], 'herramienta': row.get('Fav_Temp','un producto')}
+            else:
+                tel_v = mainCode.obtener_telefono_vendedor(row.get('Vendedor','0'), params['preferencia_index']) if params['modo_vendedor'] == "AUTO" else params['tel_fijo']
+                d_extra = {'vendedor_nombre': params.get('texto_extra',''), 'herramienta': params.get('herramienta_novedad',''), 'subtipo': params.get('subtipo_novedad','')}
             
-            d_extra = {'vendedor_nombre': params.get('texto_extra',''), 'herramienta': params.get('herramienta_novedad',''), 'subtipo': params.get('subtipo_novedad','')}
             link = mainCode.generar_link_whatsapp(tel_v, tipo, d_extra)
             
             for t in row['Telefonos_Validos']:
@@ -521,6 +565,8 @@ class WoodToolsApp:
                     res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), f"Contacto: {link}")
                 elif tipo == "Gira Vendedor": 
                     res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", f"Contacto: {link}")
+                elif tipo == "Recotización":
+                    res, tipo_error = mainCode.enviar_recotizacion(t, link)
                 elif tipo == "Personalizado": 
                     res, tipo_error = mainCode.enviar_personalizado(t, params.get('texto_extra',''), media_id, f"Contacto: {link}")
 
@@ -530,23 +576,17 @@ class WoodToolsApp:
                 else: 
                     err += 1
                     estado_individual = tipo_error
-                    if tipo_error == "ERROR DEL CLIENTE":
-                        hubo_error_cliente = True
-                    else:
-                        hubo_error_servidor = True
+                    if tipo_error == "ERROR DEL CLIENTE": hubo_error_cliente = True
+                    else: hubo_error_servidor = True
                 
-                herramienta_usada = params.get('herramienta_novedad', '-')
+                herramienta_usada = row.get('Fav_Temp', '-') if tipo == "Recotización" else params.get('herramienta_novedad', '-')
                 mainCode.registrar_envio_db(id_tanda_actual, row['Cliente'], t, tel_v, tipo, herramienta_usada, estado_individual)
                 time.sleep(1)
 
-        if self.cancelar_envio:
-            estado_final_tanda = "CAMPAÑA CANCELADA"
-        elif hubo_error_servidor:
-            estado_final_tanda = "ERROR DEL SERVIDOR"
-        elif hubo_error_cliente:
-            estado_final_tanda = "ERROR DEL CLIENTE"
-        else:
-            estado_final_tanda = "ENVIADO CON EXITO"
+        if self.cancelar_envio: estado_final_tanda = "CAMPAÑA CANCELADA"
+        elif hubo_error_servidor: estado_final_tanda = "ERROR DEL SERVIDOR"
+        elif hubo_error_cliente: estado_final_tanda = "ERROR DEL CLIENTE"
+        else: estado_final_tanda = "ENVIADO CON EXITO"
             
         mainCode.actualizar_estado_tanda(id_tanda_actual, estado_final_tanda)
 
