@@ -288,12 +288,11 @@ class WoodToolsApp:
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
 
     # ==========================================
-    # NUEVO ACTUALIZADOR: GIT PULL + PYINSTALLER LOCAL
+    # NUEVO ACTUALIZADOR: GIT PULL + PYINSTALLER LOCAL (BLINDADO CONTRA ERROR DE DLL)
     # ==========================================
     def actualizar_programa(self):
         # 1. IDENTIFICAR LA CARPETA RAÍZ DEL PROYECTO
         if getattr(sys, 'frozen', False):
-            # Si corre desde el .exe en /dist, la raíz es dos carpetas arriba
             base_dir = os.path.dirname(os.path.dirname(sys.executable))
         else:
             base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -302,15 +301,28 @@ class WoodToolsApp:
         self.root.update()
 
         try:
-            # Bandera para evitar que se abra una ventana negra al hacer las consultas a Git
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
 
-            # 2. CONECTAR A GITHUB Y BAJAR INFORMACIÓN
-            subprocess.run(["git", "fetch", "origin", "prueba"], cwd=base_dir, creationflags=creationflags)
+            # --- LA CURA CONTRA EL ERROR "Failed to load Python DLL" ---
+            # Copiamos el entorno de Windows y eliminamos todo rastro de PyInstaller
+            env_limpio = os.environ.copy()
+            variables_venenosas = ['_MEIPASS2', '_MEIPASS', '_PYIBoot_SPLX', 'PYTHONPATH', 'PYTHONHOME']
+            for var in variables_venenosas:
+                env_limpio.pop(var, None)
+            
+            # Limpiamos el PATH para que no apunte a la carpeta borrada
+            if getattr(sys, 'frozen', False):
+                meipass_path = sys._MEIPASS
+                rutas_limpias = [r for r in env_limpio.get('PATH', '').split(os.pathsep) if r != meipass_path]
+                env_limpio['PATH'] = os.pathsep.join(rutas_limpias)
+            # -----------------------------------------------------------
+
+            # 2. CONECTAR A GITHUB Y BAJAR INFORMACIÓN (USANDO ENTORNO LIMPIO)
+            subprocess.run(["git", "fetch", "origin", "prueba"], cwd=base_dir, creationflags=creationflags, env=env_limpio)
 
             # 3. COMPARAR VERSIÓN LOCAL VS GITHUB
-            local = subprocess.run(["git", "rev-parse", "HEAD"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags).stdout.strip()
-            remoto = subprocess.run(["git", "rev-parse", "origin/prueba"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags).stdout.strip()
+            local = subprocess.run(["git", "rev-parse", "HEAD"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags, env=env_limpio).stdout.strip()
+            remoto = subprocess.run(["git", "rev-parse", "origin/prueba"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags, env=env_limpio).stdout.strip()
 
             if local == remoto:
                 messagebox.showinfo("Actualización", "PROGRAMA SIN ACTUALIZACIONES")
@@ -323,7 +335,7 @@ class WoodToolsApp:
                 self.lbl_progreso.config(text="Sistema listo.", fg="white")
                 return
 
-# 4. CREAR SCRIPT BAT PARA COMPILAR EN SEGUNDO PLANO
+            # 4. CREAR SCRIPT BAT
             bat_path = os.path.join(base_dir, "actualizador.bat")
             with open(bat_path, "w", encoding="utf-8") as bat_file:
                 bat_file.write(f"""@echo off
@@ -335,12 +347,6 @@ echo ========================================================
 echo.
 echo Esperando a que el programa se cierre...
 timeout /t 3 /nobreak > NUL
-
-:: AQUI ESTA LA MAGIA PARA EVITAR EL ERROR DE LA DLL (Lavado de cerebro)
-set _MEIPASS2=
-set _MEIPASS=
-set PYTHONPATH=
-set PYTHONHOME=
 
 cd /d "{base_dir}"
 
@@ -359,10 +365,11 @@ echo ========================================================
 start "" "dist\GestorMarketing_v5.exe"
 del "%~f0"
 """)
-            # Lanzamos el script y matamos el programa actual
-            subprocess.Popen([bat_path], shell=True, cwd=base_dir)
+            # Lanzamos el script pasándole el ENTORNO LIMPIO
+            subprocess.Popen([bat_path], shell=True, cwd=base_dir, env=env_limpio)
             self.root.destroy()
             sys.exit()
+
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo completar el proceso con Git.\n\nAsegúrate de tener Git instalado y configurado.\nDetalle técnico: {e}")
             self.lbl_progreso.config(text="Sistema listo.", fg="white")
