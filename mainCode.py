@@ -19,19 +19,14 @@ BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 # ==========================================
 def obtener_ruta_recurso(ruta_relativa):
     if getattr(sys, 'frozen', False):
-        # Si se ejecuta desde el .exe compilado
         ruta_base = os.path.dirname(sys.executable)
         return os.path.join(ruta_base, ruta_relativa)
     else:
-        # Si se ejecuta desde VS Code (.py)
         ruta_base = os.path.dirname(os.path.abspath(__file__))
         ruta_directa = os.path.join(ruta_base, ruta_relativa)
-        
-        # MAGIA: Si no encuentra el archivo en la raíz, lo busca dentro de 'dist'
         ruta_dist = os.path.join(ruta_base, "dist", ruta_relativa)
         if not os.path.exists(ruta_directa) and os.path.exists(ruta_dist):
             return ruta_dist
-            
         return ruta_directa
 
 ARCHIVO_DB = obtener_ruta_recurso("historial_campanas.db") 
@@ -40,7 +35,6 @@ def inicializar_db():
     try:
         conn = sqlite3.connect(ARCHIVO_DB)
         cursor = conn.cursor()
-        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS historial (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,17 +49,12 @@ def inicializar_db():
                 estado_tanda TEXT
             )
         ''')
-        
         try: cursor.execute('ALTER TABLE historial ADD COLUMN tanda_id TEXT')
         except sqlite3.OperationalError: pass
-        
         try: cursor.execute('ALTER TABLE historial ADD COLUMN estado_tanda TEXT')
         except sqlite3.OperationalError: pass
-            
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error iniciando DB: {e}")
+        conn.commit(); conn.close()
+    except Exception as e: print(f"Error iniciando DB: {e}")
 
 def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta, estado_individual):
     try:
@@ -76,34 +65,26 @@ def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta,
             INSERT INTO historial (tanda_id, fecha_hora, cliente, telefono, vendedor_asignado, tipo_campana, herramienta, estado_envio, estado_tanda)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (tanda_id, fecha, cliente, telefono, vendedor, tipo, herramienta, estado_individual, "PROCESANDO"))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error guardando en DB: {e}")
+        conn.commit(); conn.close()
+    except Exception as e: print(f"Error guardando en DB: {e}")
 
 def actualizar_estado_tanda(tanda_id, estado_final):
     try:
         conn = sqlite3.connect(ARCHIVO_DB)
         cursor = conn.cursor()
         cursor.execute('UPDATE historial SET estado_tanda = ? WHERE tanda_id = ?', (estado_final, tanda_id))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error actualizando tanda: {e}")
+        conn.commit(); conn.close()
+    except Exception as e: print(f"Error actualizando tanda: {e}")
 
 def obtener_tandas_campanas():
     try:
         conn = sqlite3.connect(ARCHIVO_DB)
         df = pd.read_sql_query('''
             SELECT tanda_id, tipo_campana, vendedor_asignado, 
-                   MIN(fecha_hora) as fecha_inicio, 
-                   COUNT(id) as total_msgs,
-                   MAX(estado_tanda) as estado_tanda,
-                   substr(fecha_hora, 1, 7) as mes
-            FROM historial 
-            WHERE tanda_id IS NOT NULL
-            GROUP BY tanda_id 
-            ORDER BY fecha_inicio DESC
+                   MIN(fecha_hora) as fecha_inicio, COUNT(id) as total_msgs,
+                   MAX(estado_tanda) as estado_tanda, substr(fecha_hora, 1, 7) as mes
+            FROM historial WHERE tanda_id IS NOT NULL
+            GROUP BY tanda_id ORDER BY fecha_inicio DESC
         ''', conn)
         conn.close()
         return df.to_dict('records')
@@ -124,60 +105,39 @@ def obtener_datos_reporte_por_tandas(tandas_seleccionadas):
 PLANTILLA_PROMOS = "oferta_top_3"
 PLANTILLA_RESCATE = "reactivacion_cliente"
 PLANTILLA_GIRA = "aviso_visita_vendedor"
-PLANTILLA_RECOTIZACION = "recotizacion_prospecto" # <- DEBERÁS CREAR ESTA PLANTILLA EN META
+PLANTILLA_RECOTIZACION = "recotizacion_prospecto" 
 
 # ==========================================
 # BASE DE DATOS DE VENDEDORES
 # ==========================================
-DB_VENDEDORES = {
-    "Valentín": ["5491145394279"],
-    "Carlos": ["5491165630406"],
-    "Emmanuel": ["5491157528428"]
-}
-
+DB_VENDEDORES = {"Valentín": ["5491145394279"], "Carlos": ["5491165630406"], "Emmanuel": ["5491157528428"]}
 LISTA_OBSERVADOS = []
 
 def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
     codigo = str(codigo_excel).strip()
-    if codigo == "0":
-        return "5491145394279" if indice_preferencia == 0 else "5491165630406"
-    elif codigo in ["1", "302", "1/302"]:
-        return "5491157528428"
-    else:
-        return "5491145394279"
+    if codigo == "0": return "5491145394279" if indice_preferencia == 0 else "5491165630406"
+    elif codigo in ["1", "302", "1/302"]: return "5491157528428"
+    else: return "5491145394279"
 
 # ==========================================
 # GENERADOR DE LINKS AUTOCOMPLETABLES
 # ==========================================
 def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
-    if tipo_mensaje == "Promociones":
-        texto = "Hola, vi las promociones por WhatsApp y busco el [CÓDIGO] de [TIPO DE PRODUCTO] para mi máquina."
-    elif tipo_mensaje == "Rescate (Te extrañamos)":
-        texto = "Hola, me llegó el mensaje. Necesito reponer stock de [TIPO DE HERRAMIENTA] para mi taller."
-    elif tipo_mensaje == "Gira Vendedor":
-        vendedor = datos_extra.get('vendedor_nombre', 'el vendedor')
-        texto = f"Hola, vi que {vendedor} va a estar por mi zona. Necesito encargar [CANTIDAD] de [TIPO DE PRODUCTO] para su visita."
+    if tipo_mensaje == "Promociones": texto = "Hola, vi las promociones por WhatsApp y busco el [CÓDIGO] de [TIPO DE PRODUCTO] para mi máquina."
+    elif tipo_mensaje == "Rescate (Te extrañamos)": texto = "Hola, me llegó el mensaje. Necesito reponer stock de [TIPO DE HERRAMIENTA] para mi taller."
+    elif tipo_mensaje == "Gira Vendedor": texto = f"Hola, vi que {datos_extra.get('vendedor_nombre', 'el vendedor')} va a estar por mi zona. Necesito encargar [CANTIDAD] de [TIPO DE PRODUCTO] para su visita."
     elif tipo_mensaje == "Novedades":
-        herramienta = datos_extra.get('herramienta', 'herramientas')
-        subtipo = datos_extra.get('subtipo', '')
-        if subtipo == "Ingresos":
-            texto = f"Hola, vi los nuevos ingresos de {herramienta}. Me interesa el modelo [CÓDIGO O MEDIDA] para cortar [MATERIAL]."
-        else:
-            texto = f"Hola, qué bueno que entró stock de {herramienta}. Necesito [CANTIDAD] unidades del código [CÓDIGO]."
-    elif tipo_mensaje == "Recotización":
-        nombre = datos_extra.get('cliente_nombre', '')
-        herramienta = datos_extra.get('herramienta', 'un producto')
-        texto = f"Hola Emmanuel, soy {nombre}. Me gustaría recibir una recotización por {herramienta}."
-    elif tipo_mensaje == "Personalizado":
-        texto = "Hola, vi el mensaje de WhatsApp y quiero consultar por [PRODUCTO / SERVICIO]."
-    else:
-        texto = "Hola, me contacto para realizar una consulta."
+        if datos_extra.get('subtipo', '') == "Ingresos": texto = f"Hola, vi los nuevos ingresos de {datos_extra.get('herramienta', 'herramientas')}. Me interesa el modelo [CÓDIGO O MEDIDA] para cortar [MATERIAL]."
+        else: texto = f"Hola, qué bueno que entró stock de {datos_extra.get('herramienta', 'herramientas')}. Necesito [CANTIDAD] unidades del código [CÓDIGO]."
+    elif tipo_mensaje == "Recotización": texto = f"Hola Emmanuel, soy {datos_extra.get('cliente_nombre', '')}. Me gustaría recibir una recotización por {datos_extra.get('herramienta', 'un producto')}."
+    elif tipo_mensaje == "Personalizado": texto = "Hola, vi el mensaje de WhatsApp y quiero consultar por [PRODUCTO / SERVICIO]."
+    else: texto = "Hola, me contacto para realizar una consulta."
         
     msg_codificado = urllib.parse.quote(texto)
     return f"https://wa.me/{tel}?text={msg_codificado}"
 
 # ==========================================
-# LECTURA DE EXCEL Y VALIDACIÓN (DINÁMICO)
+# LECTURA DE EXCEL Y VALIDACIÓN
 # ==========================================
 def extraer_telefonos(row1, row2):
     phones = []
@@ -194,28 +154,18 @@ def extraer_telefonos(row1, row2):
     return [x for x in phones if not (x in seen or seen.add(x))]
 
 def leer_desde_excel(ruta_archivo, tipo_base):
-    print(f"--- LEYENDO BASE DE DATOS ({tipo_base.upper()}) ---")
     if not os.path.exists(ruta_archivo): return []
     try:
         if ruta_archivo.endswith('.csv'): df = pd.read_csv(ruta_archivo, header=None if tipo_base == "clientes" else 0, dtype=str)
         else: df = pd.read_excel(ruta_archivo, header=None if tipo_base == "clientes" else 0, dtype=str)
         
         registros = []
-        
-        # LÓGICA PARA BASE PROSPECTOS (NUEVA) - CON TÍTULOS CORREGIDOS
         if tipo_base == "prospectos":
             for _, row in df.iterrows():
-                cliente_dict = {
-                    'Cliente': str(row.get('Nombres', 'Sin Nombre')).strip(),
-                    'Telefonos_Raw': [str(row.get('Número', ''))],
-                    'Vendedor': str(row.get('Vendedor', '5001')).strip(),
-                    'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip(),
-                    'Zona': str(row.get('Producto por el que consultó', '')).strip() # Usamos la zona para mostrar el interés en la tabla
-                }
+                cliente_dict = {'Cliente': str(row.get('Nombres', 'Sin Nombre')).strip(), 'Telefonos_Raw': [str(row.get('Número', ''))], 'Vendedor': str(row.get('Vendedor', '5001')).strip(), 'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip(), 'Zona': str(row.get('Producto por el que consultó', '')).strip()}
                 registros.append(cliente_dict)
             return registros
 
-        # LÓGICA PARA BASE CLIENTES (ANTIGUA)
         start_index = 0
         for idx, row in df.iterrows():
             if str(row[0]).isdigit() and len(str(row[0])) > 5:
@@ -244,9 +194,7 @@ def leer_desde_excel(ruta_archivo, tipo_base):
                 registros.append(cliente_dict)
             i += 1
         return registros
-    except Exception as e: 
-        print(e)
-        return []
+    except Exception as e: return []
 
 def formatear_telefono(numero):
     num_str = str(numero).strip().replace(" ", "").replace("-", "").replace(".", "")
@@ -333,8 +281,8 @@ def enviar_gira(tel, vend, p1, p2, link):
 def enviar_recotizacion(tel, link): 
     return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [{"type": "text", "text": str(link)}]}]}})
 
-def enviar_personalizado(tel, txt, media_id, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "image", "image": {"id": media_id, "caption": f"{txt}\n\n{link}"}})
+def enviar_personalizado(tel, caption_final, media_id): 
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "image", "image": {"id": media_id, "caption": str(caption_final)}})
 
 def enviar_novedades(tel, tipo_novedad, herramienta, link_wa):
     txt = f"Hola, tenemos nuevas incorporaciones de {herramienta}. Si querés más información entrá a este link: {link_wa}" if tipo_novedad == "Ingresos" else f"Hola, te informamos que pudimos obtener nuevamente stock de {herramienta}. Para conocer cuáles son los modelos entrá a este link: {link_wa}"

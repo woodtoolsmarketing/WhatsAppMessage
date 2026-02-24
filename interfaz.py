@@ -23,7 +23,7 @@ class WoodToolsApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM")
-        self.root.geometry("1500x900") # Lo amplié un poquito a 1500 para que el preview entre cómodo
+        self.root.geometry("1500x900") 
         
         self.cancelar_envio = False
         self.tipo_base_actual = "clientes" 
@@ -113,31 +113,33 @@ class WoodToolsApp:
         self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5, sticky="n")
         self.combo_vendedor.current(0)
 
-        # COLUMNA 2: Entradas Dinámicas
+        # COLUMNA 2: Entradas Dinámicas (AL COSTADO DEL PREVIEW)
         self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5")
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=10, sticky="nwe")
         
-        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5", font=("Arial", 8, "bold"))
+        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5", font=("Arial", 9, "bold"))
         self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=35)
-        self.text_dinamico_multilinea = tk.Text(self.frame_dinamico, width=40, height=5, font=("Arial", 10), relief="solid", bd=1)
+        self.text_dinamico_multilinea = tk.Text(self.frame_dinamico, width=45, height=6, font=("Arial", 10), relief="solid", bd=1)
         
         self.lbl_novedad_subtipo = tk.Label(self.frame_dinamico, text="Tipo:", bg="#f5f5f5", font=("Arial", 8, "bold"))
         self.combo_novedad_subtipo = ttk.Combobox(self.frame_dinamico, values=["Ingresos", "Reposición de stock"], state="readonly", width=25)
         self.lbl_novedad_herramienta = tk.Label(self.frame_dinamico, text="Herramienta:", bg="#f5f5f5", font=("Arial", 8, "bold"))
         self.combo_novedad_herramienta = ttk.Combobox(self.frame_dinamico, state="readonly", width=25)
 
+        self.lbl_aviso_meta = tk.Label(self.frame_dinamico, text="🔒 Estructura fijada por plantilla de Meta.", fg="#d32f2f", bg="#f5f5f5", font=("Arial", 8, "bold"))
+        self.lbl_tip_tags = tk.Label(self.frame_dinamico, text="💡 Tip: Usa [CLIENTE] y [LINK] para acomodarlos donde quieras.", fg="#1976d2", bg="#f5f5f5", font=("Arial", 8, "italic"))
+
         self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen", command=self.seleccionar_imagen)
         self.btn_quitar_imagen = tk.Button(self.frame_dinamico, text="❌ Quitar Imagen", command=self.quitar_imagen, fg="red")
         self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red")
 
-        # COLUMNA 3: EL NUEVO PREVIEW (Recuadro gris)
+        # COLUMNA 3: EL RECUADRO DE VISTA PREVIA
         self.frame_preview = tk.LabelFrame(frame_campana, text="Plantilla de Mensaje (Vista Previa)", bg="#f5f5f5", fg="#555", font=("Segoe UI", 9, "bold"))
         self.frame_preview.grid(row=0, column=3, rowspan=2, padx=30, sticky="nsew")
         
-        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=6, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=10, pady=10, fg="#333")
+        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=7, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=10, pady=10, fg="#333")
         self.lbl_preview_text.pack(padx=10, pady=5, fill="both", expand=True)
 
-        # Bindings para que el preview se actualice al escribir
         self.entry_dinamico_texto.bind("<KeyRelease>", self.actualizar_preview)
         self.text_dinamico_multilinea.bind("<KeyRelease>", self.actualizar_preview)
         self.combo_novedad_subtipo.bind("<<ComboboxSelected>>", self.actualizar_preview)
@@ -206,33 +208,46 @@ class WoodToolsApp:
         t = tk.Text(vent, wrap="word", padx=10, pady=10); t.pack(fill="both", expand=True)
         t.insert("1.0", msg); t.config(state="disabled")
 
-    # ---- FUNCIÓN QUE ACTUALIZA EL RECUADRO GRIS EN VIVO ----
     def actualizar_preview(self, event=None):
         tipo = self.tipo_mensaje_var.get()
-        preview = ""
         
+        # Generar datos de muestra
+        nombre_ej = "[Nombre del Cliente]"
+        herramienta_ej = "[Herramienta de interés]"
+        if not self.df_filtrado.empty:
+            df_ok = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
+            if not df_ok.empty:
+                nombre_ej = df_ok.iloc[0]['Cliente']
+                herramienta_ej = df_ok.iloc[0].get('Fav_Temp', herramienta_ej)
+
         if tipo == "Promociones":
-            preview = "¡Hola [Nombre del Cliente]! Te acercamos nuestras Ofertas y Herramientas con Promociones exclusivas.\n\nEntrá a este link para más información 👉 [Link de WhatsApp con info del cliente]"
+            preview = f"¡Hola {nombre_ej}! Te acercamos nuestras Ofertas y Herramientas con Promociones exclusivas.\n\nEntrá a este link para más información 👉 [Link con info del cliente]"
         elif tipo == "Rescate (Te extrañamos)":
-            preview = "¡Hola [Nombre del Cliente]! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de [Herramienta de interés].\n\nEntrá a este link para más información 👉 [Link de WhatsApp]"
+            preview = f"¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej}.\n\nEntrá a este link para más información 👉 [Link de WhatsApp]"
         elif tipo == "Gira Vendedor":
             vend = self.entry_dinamico_texto.get().strip()
             if not vend: vend = "[Nombre Vendedor]"
-            preview = f"¡Hola [Nombre del Cliente]! Te avisamos que {vend} estará visitando clientes por tu zona.\n\nEntrá a este link para coordinar la visita 👉 [Link de WhatsApp]"
+            preview = f"¡Hola {nombre_ej}! Te avisamos que {vend} estará visitando clientes por tu zona.\n\nEntrá a este link para coordinar la visita 👉 [Link de WhatsApp]"
         elif tipo == "Novedades":
             her = self.combo_novedad_herramienta.get()
             if not her: her = "[Herramienta]"
-            sub = self.combo_novedad_subtipo.get()
-            if sub == "Ingresos":
+            if self.combo_novedad_subtipo.get() == "Ingresos":
                 preview = f"Hola, tenemos nuevas incorporaciones de {her}. Si querés más información entrá a este link: [Link de WhatsApp]"
             else:
                 preview = f"Hola, te informamos que pudimos obtener nuevamente stock de {her}. Para conocer cuáles son los modelos entrá a este link: [Link de WhatsApp]"
         elif tipo == "Recotización":
-            preview = "¡Hola [Nombre del Cliente]! Vimos que en un pasado estuviste interesado en nuestros productos pero no obtuvimos más respuestas de tu parte. Podemos ofrecerte una recotización para ese producto que tanto estabas buscando.\n\nEntrá a este link para más información 👉 [Link de WhatsApp hacia Emmanuel]"
+            preview = f"¡Hola {nombre_ej}! Vimos que en un pasado estuviste interesado en nuestros productos pero no obtuvimos más respuestas de tu parte. Podemos ofrecerte una recotización para {herramienta_ej}.\n\nEntrá a este link para más información 👉 [Link de WhatsApp a Emmanuel]"
         elif tipo == "Personalizado":
             txt = self.text_dinamico_multilinea.get("1.0", tk.END).strip()
-            if not txt: txt = "[Escribe tu mensaje a medida aquí]"
-            preview = f"{txt}\n\n[Link de WhatsApp personalizado]\n\n📎 [Imagen Adjunta Obligatoria]"
+            if not txt: txt = "Escribe tu mensaje libre aquí."
+            
+            # EL SUPERPODER DE LAS ETIQUETAS DINÁMICAS
+            preview = txt.replace("[CLIENTE]", nombre_ej).replace("[LINK]", "[Link Autocompletable de WhatsApp]")
+            
+            if "[LINK]" not in txt:
+                preview += f"\n\n[Link agregado por defecto al final]"
+            
+            preview += "\n\n📎 [Tu Imagen Adjunta se enviará junto con este texto]"
 
         self.lbl_preview_text.config(text=preview)
 
@@ -240,11 +255,15 @@ class WoodToolsApp:
         tipo = self.tipo_mensaje_var.get()
         for w in self.frame_dinamico.winfo_children(): w.pack_forget()
         
+        if tipo in ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Recotización"]:
+            self.lbl_aviso_meta.pack(anchor="w", pady=(0,5))
+            
         if tipo == "Gira Vendedor":
-            self.lbl_dinamico_titulo.config(text="Nombre Vendedor:"); self.lbl_dinamico_titulo.pack(anchor="w")
+            self.lbl_dinamico_titulo.config(text="Escribe el Nombre del Vendedor:"); self.lbl_dinamico_titulo.pack(anchor="w")
             self.entry_dinamico_texto.pack(anchor="w", pady=5)
         elif tipo == "Personalizado":
-            self.lbl_dinamico_titulo.config(text="Mensaje Libre:"); self.lbl_dinamico_titulo.pack(anchor="w")
+            self.lbl_dinamico_titulo.config(text="Mensaje Libre a tu medida:"); self.lbl_dinamico_titulo.pack(anchor="w")
+            self.lbl_tip_tags.pack(anchor="w", pady=(0, 5)) # Mostramos el tip de las etiquetas
             self.text_dinamico_multilinea.pack(anchor="w", pady=5)
         elif tipo == "Novedades":
             self.lbl_novedad_subtipo.pack(anchor="w"); self.combo_novedad_subtipo.pack(anchor="w", pady=(0,5))
@@ -253,8 +272,7 @@ class WoodToolsApp:
             self.combo_novedad_herramienta['values'] = mainCode.identificar_cols_productos(pd.DataFrame())
             if not self.combo_novedad_herramienta.get(): self.combo_novedad_herramienta.current(0)
         elif tipo == "Recotización":
-            tk.Label(self.frame_dinamico, text="OJO: Se enviará plantilla pre-aprobada.", fg="red", bg="#f5f5f5").pack(anchor="w", pady=5)
-            tk.Label(self.frame_dinamico, text="El link apuntará automáticamente a Emmanuel.", fg="blue", bg="#f5f5f5").pack(anchor="w")
+            tk.Label(self.frame_dinamico, text="El link apuntará automáticamente a Emmanuel.", fg="blue", bg="#f5f5f5").pack(anchor="w", pady=5)
 
         ttk.Separator(self.frame_dinamico, orient='horizontal').pack(fill='x', pady=10)
         
@@ -264,7 +282,6 @@ class WoodToolsApp:
             if self.ruta_imagen_seleccionada: self.btn_quitar_imagen.pack(anchor="w", pady=(0,2))
             self.lbl_nombre_imagen.pack(anchor="w")
 
-        # Refresca el texto de la derecha
         self.actualizar_preview()
 
     def seleccionar_imagen(self):
@@ -323,23 +340,18 @@ class WoodToolsApp:
             return self.root.after(0, lambda: messagebox.showerror("Error", f"Base vacía o no se encontró '{archivo}' en la carpeta raíz ni en 'dist'."))
             
         for c in ['Zona', 'Vendedor']: df[c] = df[c].fillna("0").astype(str)
-        
         if tipo == "clientes":
-            df['Fav_Temp'] = "Sierras"
-            df['Sec_Temp'] = "Cuchillas"
+            df['Fav_Temp'] = "Sierras"; df['Sec_Temp'] = "Cuchillas"
         
         self.df_original = df; self.df_filtrado = df.copy()
         
         self.root.after(0, self.actualizar_tabla)
-        
         zonas_unicas = ["Todas"] + sorted(df['Zona'].unique().tolist())
         self.root.after(0, lambda: self.combo_zona.config(values=zonas_unicas))
         self.root.after(0, lambda: self.combo_zona.current(0))
-        
         herramientas = ["Todos"] + mainCode.identificar_cols_productos(df)
         self.root.after(0, lambda: self.combo_herramientas.config(values=herramientas))
         self.root.after(0, lambda: self.combo_herramientas.current(0))
-        
         self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} regs ({tipo.upper()})", fg="green"))
 
     def actualizar_tabla(self):
@@ -371,83 +383,54 @@ class WoodToolsApp:
     # ==========================================
     def abrir_ventana_exportacion(self):
         tandas_disponibles = mainCode.obtener_tandas_campanas()
-        
-        if not tandas_disponibles:
-            return messagebox.showinfo("Información", "Todavía no hay ninguna campaña guardada en el historial.")
-            
-        vent_exportar = tk.Toplevel(self.root)
-        vent_exportar.title("Exportar Reportes")
-        vent_exportar.geometry("600x600")
-        
+        if not tandas_disponibles: return messagebox.showinfo("Información", "Todavía no hay ninguna campaña guardada en el historial.")
+        vent_exportar = tk.Toplevel(self.root); vent_exportar.title("Exportar Reportes"); vent_exportar.geometry("600x600")
         tk.Label(vent_exportar, text="Selecciona qué campañas deseas incluir en tu reporte:", font=("Arial", 11, "bold")).pack(pady=15)
-        
-        frame_contenedor = tk.Frame(vent_exportar)
-        frame_contenedor.pack(fill="both", expand=True, padx=20, pady=5)
-        
-        canvas = tk.Canvas(frame_contenedor)
-        scrollbar = ttk.Scrollbar(frame_contenedor, orient="vertical", command=canvas.yview)
+        frame_contenedor = tk.Frame(vent_exportar); frame_contenedor.pack(fill="both", expand=True, padx=20, pady=5)
+        canvas = tk.Canvas(frame_contenedor); scrollbar = ttk.Scrollbar(frame_contenedor, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
-        
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw"); canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True); scrollbar.pack(side="right", fill="y")
         
         meses_nombres = {"01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril", "05": "Mayo", "06": "Junio", "07": "Julio", "08": "Agosto", "09": "Septiembre", "10": "Octubre", "11": "Noviembre", "12": "Diciembre"}
-        self.check_vars = {}
-        ultimo_mes_visto = ""
-        
+        self.check_vars = {}; ultimo_mes_visto = ""
         for tanda in tandas_disponibles:
             t_id = tanda['tanda_id']; t_fecha = tanda['fecha_inicio']; t_tipo = tanda['tipo_campana']; t_vend = tanda['vendedor_asignado']; t_tot = tanda['total_msgs']; t_estado_crudo = tanda['estado_tanda']; t_mes_anio = tanda['mes'] 
             if t_mes_anio != ultimo_mes_visto:
                 if t_mes_anio:
                     anio, mes_num = t_mes_anio.split('-')
-                    nombre_mes = meses_nombres.get(mes_num, mes_num).upper()
-                    tk.Label(scrollable_frame, text=f"--- {nombre_mes} {anio} ---", font=("Arial", 10, "bold"), fg="#1976D2").pack(anchor="w", pady=(15, 5))
+                    tk.Label(scrollable_frame, text=f"--- {meses_nombres.get(mes_num, mes_num).upper()} {anio} ---", font=("Arial", 10, "bold"), fg="#1976D2").pack(anchor="w", pady=(15, 5))
                 ultimo_mes_visto = t_mes_anio
-            
             nombre_vendedor = "Varios"
             for nombre, numeros in mainCode.DB_VENDEDORES.items():
                 if t_vend in numeros: nombre_vendedor = nombre; break
-                    
             estado_formateado = f"({t_estado_crudo})" if t_estado_crudo else "(SIN ESTADO)"
-            texto_label = f"[{t_fecha[:10]}] {t_tipo} - {nombre_vendedor} ({t_tot} msjs) {estado_formateado}"
-            
-            var = tk.BooleanVar(value=True) 
-            self.check_vars[t_id] = var
-            ttk.Checkbutton(scrollable_frame, text=texto_label, variable=var).pack(anchor="w", pady=2, padx=15)
-            
+            var = tk.BooleanVar(value=True); self.check_vars[t_id] = var
+            ttk.Checkbutton(scrollable_frame, text=f"[{t_fecha[:10]}] {t_tipo} - {nombre_vendedor} ({t_tot} msjs) {estado_formateado}", variable=var).pack(anchor="w", pady=2, padx=15)
         tk.Button(vent_exportar, text="📥 Generar Excel", bg="#4CAF50", fg="white", font=("bold", 11), command=lambda: self._ejecutar_exportacion_filtrada(vent_exportar)).pack(pady=20)
 
     def _ejecutar_exportacion_filtrada(self, ventana):
         tandas_elegidas = [t_id for t_id, var in self.check_vars.items() if var.get()]
         if not tandas_elegidas: return messagebox.showwarning("Atención", "Debes dejar seleccionada al menos una campaña para exportar.")
-            
         df_historico = mainCode.obtener_datos_reporte_por_tandas(tandas_elegidas)
         if df_historico.empty: return messagebox.showerror("Error", "No se encontraron datos.")
-            
         datos_para_excel = []
         for t_id in reversed(tandas_elegidas):
             df_tanda = df_historico[df_historico['tanda_id'] == t_id]
             if df_tanda.empty: continue
-            
             primer_registro = df_tanda.iloc[0]; tipo_campana = primer_registro['tipo_campana'].upper(); num_vend = primer_registro['vendedor_asignado']; fecha_campana = primer_registro['fecha_hora'][:10]
             nombre_vend = "VARIOS"
             for nombre, numeros in mainCode.DB_VENDEDORES.items():
                 if num_vend in numeros: nombre_vend = nombre.upper(); break
-            
             datos_para_excel.append({"Fecha y Hora": f"CAMPAÑA DEL DÍA [{fecha_campana}] - {tipo_campana} DE {nombre_vend}", "Cliente": "-------------------------", "Teléfono": "-------------------------", "Vendedor Asignado": "-------------------------", "Tipo de Campaña": "-------------------------", "Herramienta": "-------------------------", "Estado de Envío": "-------------------------"})
             for _, row in df_tanda.iterrows():
                 datos_para_excel.append({"Fecha y Hora": row['fecha_hora'], "Cliente": row['cliente'], "Teléfono": row['telefono'], "Vendedor Asignado": row['vendedor_asignado'], "Tipo de Campaña": row['tipo_campana'], "Herramienta": row.get('herramienta', ''), "Estado de Envío": row['estado_envio']})
-                
         df_final = pd.DataFrame(datos_para_excel)
         try:
             ruta_base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
             carpeta_reportes = os.path.join(ruta_base, "Reportes")
             if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
-            
             ruta_final = os.path.join(carpeta_reportes, f"Reporte_Campanas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
             df_final.to_excel(ruta_final, index=False)
             os.startfile(carpeta_reportes) 
@@ -495,7 +478,6 @@ class WoodToolsApp:
             if not self.text_dinamico_multilinea.get("1.0", tk.END).strip(): return messagebox.showerror("Error", "Texto obligatorio.")
             params['texto_extra'] = self.text_dinamico_multilinea.get("1.0", tk.END).strip()
 
-        # Quitamos la ventana emergente gigante de Preview porque ya está incrustado a la derecha.
         if not messagebox.askyesno("Confirmar Envío", f"Revisá la Vista Previa a la derecha.\n\n¿Estás seguro que deseas disparar la campaña a {len(df_ok)} destinatarios?"): return
         
         self.cancelar_envio = False
@@ -506,7 +488,6 @@ class WoodToolsApp:
 
     def _proceso_envio(self, tipo, params, df):
         media_id = None
-        
         if params.get('ruta_imagen'):
             self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
             media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
@@ -516,18 +497,10 @@ class WoodToolsApp:
                 return messagebox.showerror("Error", "Fallo subida imagen a Meta.")
 
         id_tanda_actual = datetime.now().strftime("TANDA_%Y%m%d_%H%M%S")
-
-        tot = len(df)
-        ok = 0
-        err = 0
-        
-        hubo_error_servidor = False
-        hubo_error_cliente = False
+        tot = len(df); ok = 0; err = 0; hubo_error_servidor = False; hubo_error_cliente = False
         
         for i, (_, row) in enumerate(df.iterrows()):
-            if self.cancelar_envio:
-                break
-                
+            if self.cancelar_envio: break
             self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Cliente {x+1}/{tot}...", fg="blue"))
             
             if tipo == "Recotización":
@@ -540,35 +513,29 @@ class WoodToolsApp:
             link = mainCode.generar_link_whatsapp(tel_v, tipo, d_extra)
             
             for t in row['Telefonos_Validos']:
-                if self.cancelar_envio: 
-                    break
-                
-                res = False
-                tipo_error = ""
+                if self.cancelar_envio: break
+                res = False; tipo_error = ""
                 
                 if media_id and tipo != "Personalizado": 
                     mainCode.enviar_solo_imagen(t, media_id)
                     time.sleep(0.5)
                 
-                if tipo == "Novedades": 
-                    res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link)
-                elif tipo == "Promociones": 
-                    res, tipo_error = mainCode.enviar_promocion(t, "Promociones exclusivas", "Herramientas", "Ofertas", f"Contacto: {link}")
-                elif tipo == "Rescate (Te extrañamos)": 
-                    res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), f"Contacto: {link}")
-                elif tipo == "Gira Vendedor": 
-                    res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", f"Contacto: {link}")
-                elif tipo == "Recotización":
-                    res, tipo_error = mainCode.enviar_recotizacion(t, link)
+                if tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link)
+                elif tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, "Promociones exclusivas", "Herramientas", "Ofertas", f"Contacto: {link}")
+                elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), f"Contacto: {link}")
+                elif tipo == "Gira Vendedor": res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", f"Contacto: {link}")
+                elif tipo == "Recotización": res, tipo_error = mainCode.enviar_recotizacion(t, link)
                 elif tipo == "Personalizado": 
-                    res, tipo_error = mainCode.enviar_personalizado(t, params.get('texto_extra',''), media_id, f"Contacto: {link}")
+                    # EL SUPERPODER EN ACCIÓN
+                    txt_base = params.get('texto_extra','')
+                    caption_final = txt_base.replace("[CLIENTE]", row['Cliente']).replace("[LINK]", link)
+                    if "[LINK]" not in txt_base:
+                        caption_final += f"\n\nContacto: {link}"
+                    res, tipo_error = mainCode.enviar_personalizado(t, caption_final, media_id)
 
-                if res: 
-                    ok += 1 
-                    estado_individual = "ENVIADO CORRECTAMENTE"
+                if res: ok += 1; estado_individual = "ENVIADO CORRECTAMENTE"
                 else: 
-                    err += 1
-                    estado_individual = tipo_error
+                    err += 1; estado_individual = tipo_error
                     if tipo_error == "ERROR DEL CLIENTE": hubo_error_cliente = True
                     else: hubo_error_servidor = True
                 
@@ -582,7 +549,6 @@ class WoodToolsApp:
         else: estado_final_tanda = "ENVIADO CON EXITO"
             
         mainCode.actualizar_estado_tanda(id_tanda_actual, estado_final_tanda)
-
         self.root.after(0, lambda: self.btn_enviar.config(state="normal"))
         self.root.after(0, lambda: self.btn_cancelar.config(state="disabled", text="🛑 CANCELAR ENVÍO"))
         
