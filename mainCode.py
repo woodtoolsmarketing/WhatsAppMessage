@@ -313,6 +313,7 @@ def subir_imagen_whatsapp(ruta):
         return None
     except: return None
 
+
 def enviar_promocion(tel, p1, p2, p3, link): 
     return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [{"type": "text", "text": str(p1)}, {"type": "text", "text": "Descuentos"}, {"type": "text", "text": str(p2)}, {"type": "text", "text": str(p3)}, {"type": "text", "text": str(link)}]}]}})
 
