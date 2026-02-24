@@ -302,6 +302,7 @@ def _enviar_request(data):
             
     except Exception as e: 
         return False, "ERROR DEL SERVIDOR"
+    
 
 def subir_imagen_whatsapp(ruta):
     try:
