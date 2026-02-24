@@ -8,7 +8,6 @@ import sys
 import time
 import ctypes  
 import urllib.parse
-import subprocess
 from datetime import datetime
 
 import mainCode 
@@ -26,7 +25,7 @@ def obtener_ruta_interna(ruta_relativa):
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM y Auto-Compilador Git")
+        self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM")
         self.root.geometry("1400x900") 
         
         self.cancelar_envio = False
@@ -75,10 +74,6 @@ class WoodToolsApp:
         
         btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte Mensual / Anual", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
-        
-        # BOTÓN NUEVO: ACTUALIZADOR LOCAL CON GIT
-        btn_actualizar = tk.Button(frame_top, text="⬇️ Actualizar Programa", command=self.actualizar_programa, bg="#607D8B", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_actualizar.pack(side=tk.RIGHT, padx=20)
         
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="gray", bg="#e0e0e0")
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
@@ -286,93 +281,6 @@ class WoodToolsApp:
         self.df_filtrado = df; self.actualizar_tabla(); self._limpiar_panel_telefonos()
 
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
-
-    # ==========================================
-    # NUEVO ACTUALIZADOR: GIT PULL + PYINSTALLER LOCAL (BLINDADO CONTRA ERROR DE DLL)
-    # ==========================================
-    def actualizar_programa(self):
-        # 1. IDENTIFICAR LA CARPETA RAÍZ DEL PROYECTO
-        if getattr(sys, 'frozen', False):
-            base_dir = os.path.dirname(os.path.dirname(sys.executable))
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-
-        self.lbl_progreso.config(text="Buscando actualizaciones en GitHub...", fg="blue")
-        self.root.update()
-
-        try:
-            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
-
-            # --- LA CURA CONTRA EL ERROR "Failed to load Python DLL" ---
-            # Copiamos el entorno de Windows y eliminamos todo rastro de PyInstaller
-            env_limpio = os.environ.copy()
-            variables_venenosas = ['_MEIPASS2', '_MEIPASS', '_PYIBoot_SPLX', 'PYTHONPATH', 'PYTHONHOME']
-            for var in variables_venenosas:
-                env_limpio.pop(var, None)
-            
-            # Limpiamos el PATH para que no apunte a la carpeta borrada
-            if getattr(sys, 'frozen', False):
-                meipass_path = sys._MEIPASS
-                rutas_limpias = [r for r in env_limpio.get('PATH', '').split(os.pathsep) if r != meipass_path]
-                env_limpio['PATH'] = os.pathsep.join(rutas_limpias)
-            # -----------------------------------------------------------
-
-            # 2. CONECTAR A GITHUB Y BAJAR INFORMACIÓN (USANDO ENTORNO LIMPIO)
-            subprocess.run(["git", "fetch", "origin", "prueba"], cwd=base_dir, creationflags=creationflags, env=env_limpio)
-
-            # 3. COMPARAR VERSIÓN LOCAL VS GITHUB
-            local = subprocess.run(["git", "rev-parse", "HEAD"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags, env=env_limpio).stdout.strip()
-            remoto = subprocess.run(["git", "rev-parse", "origin/prueba"], cwd=base_dir, capture_output=True, text=True, creationflags=creationflags, env=env_limpio).stdout.strip()
-
-            if local == remoto:
-                messagebox.showinfo("Actualización", "PROGRAMA SIN ACTUALIZACIONES")
-                self.lbl_progreso.config(text="Sistema listo.", fg="white")
-                return
-
-            # SI HAY ACTUALIZACIONES, PROCEDEMOS
-            msg = "Se encontraron actualizaciones en el código.\n\nEl programa se cerrará para descargar los cambios y volver a compilarse (puede tardar 1 o 2 minutos). Verás una pantalla negra mientras compila."
-            if not messagebox.askyesno("Actualización Disponible", msg): 
-                self.lbl_progreso.config(text="Sistema listo.", fg="white")
-                return
-
-            # 4. CREAR SCRIPT BAT
-            bat_path = os.path.join(base_dir, "actualizador.bat")
-            with open(bat_path, "w", encoding="utf-8") as bat_file:
-                bat_file.write(f"""@echo off
-color 0A
-title Actualizador y Compilador WoodTools
-echo ========================================================
-echo        ACTUALIZANDO EL SISTEMA DESDE GITHUB
-echo ========================================================
-echo.
-echo Esperando a que el programa se cierre...
-timeout /t 3 /nobreak > NUL
-
-cd /d "{base_dir}"
-
-echo.
-echo [1/2] Descargando ultimos cambios de codigo...
-git pull origin prueba
-
-echo.
-echo [2/2] Compilando el nuevo archivo .exe (Esto puede tardar unos minutos)...
-pyinstaller --clean --noconfirm --onefile --windowed --name "GestorMarketing_v5" --icon="Imagenes\logo.ico" --add-data "Imagenes;Imagenes" interfaz.py
-
-echo.
-echo ========================================================
-echo  ¡COMPILACION FINALIZADA CON EXITO! Abriendo programa...
-echo ========================================================
-start "" "dist\GestorMarketing_v5.exe"
-del "%~f0"
-""")
-            # Lanzamos el script pasándole el ENTORNO LIMPIO
-            subprocess.Popen([bat_path], shell=True, cwd=base_dir, env=env_limpio)
-            self.root.destroy()
-            sys.exit()
-
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo completar el proceso con Git.\n\nAsegúrate de tener Git instalado y configurado.\nDetalle técnico: {e}")
-            self.lbl_progreso.config(text="Sistema listo.", fg="white")
 
     # ==========================================
     # LÓGICA DE EXPORTACIÓN (MESES Y TANDAS)
