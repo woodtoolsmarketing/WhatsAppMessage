@@ -23,6 +23,6 @@ if "%LOCAL_VER%"=="%REMOTE_VER%" (
     timeout /t 2 > NUL
 )
 
-:: Abre el programa y cierra esta ventana negra
-start pythonw interfaz.py
+:: Abre el programa usando el entorno virtual y cierra esta ventana negra
+start .\venv\Scripts\pythonw.exe interfaz.py
 exit
