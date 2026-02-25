@@ -164,7 +164,7 @@ class WoodToolsApp:
         # ==========================================
         # 5. TABLAS DE RESULTADOS
         # ==========================================
-        self.frame_telefonos = tk.LabelFrame(root, text="🔍 Alternativas", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 9, "bold"))
+        self.frame_telefonos = tk.LabelFrame(root, text="🔍 Gestión de Teléfonos (Clic en tabla para ver)", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 9, "bold"))
         self.frame_telefonos.pack(fill="x", padx=20, pady=5, side="bottom")
         self._limpiar_panel_telefonos()
 
@@ -288,22 +288,128 @@ class WoodToolsApp:
 
     def _limpiar_panel_telefonos(self):
         for w in self.frame_telefonos.winfo_children(): w.destroy()
-        tk.Label(self.frame_telefonos, text="Clic en tabla para ver detalles.", bg="#f5f5f5", fg="gray").pack(pady=10)
+        tk.Label(self.frame_telefonos, text="Clic en tabla para ver las opciones de edición.", bg="#f5f5f5", fg="gray").pack(pady=10)
+
+    # NUEVAS FUNCIONES DE EDICIÓN Y ALTERNANCIA
+    def alternar_estado_numero(self, num_formateado, es_valido_actual):
+        try:
+            sel = self.tree.selection()
+            if not sel: return
+            idx = int(sel[0])
+            row = self.df_filtrado.loc[idx]
+            
+            if es_valido_actual:
+                if num_formateado in row['Telefonos_Validos']:
+                    row['Telefonos_Validos'].remove(num_formateado)
+                    row['Telefonos_Invalidos'].append(num_formateado)
+            else:
+                if num_formateado in row['Telefonos_Invalidos']:
+                    row['Telefonos_Invalidos'].remove(num_formateado)
+                    row['Telefonos_Validos'].append(num_formateado)
+                    
+            row['Es_Valido'] = len(row['Telefonos_Validos']) > 0
+            if row['Telefonos_Validos']: row['Tel_Formateado'] = " | ".join(row['Telefonos_Validos'])
+            elif row['Telefonos_Invalidos']: row['Tel_Formateado'] = row['Telefonos_Invalidos'][0]
+            else: row['Tel_Formateado'] = "Sin número"
+            
+            self.df_filtrado.loc[idx] = row
+            self.df_original.loc[idx] = row
+            
+            self.actualizar_tabla()
+            self.tree.selection_set(idx)
+            self.al_seleccionar_cliente(None)
+        except Exception as e: print("Error alternando:", e)
+
+    def editar_numero(self, num_antiguo, es_valido_actual):
+        try:
+            sel = self.tree.selection()
+            if not sel: return
+            idx = int(sel[0])
+            row = self.df_filtrado.loc[idx]
+            
+            # Pedir el número nuevo al usuario
+            nuevo_num = simpledialog.askstring("Editar Número", f"Corrigiendo el número de {row['Cliente']}:\n\nReemplazar {num_antiguo} por:", initialvalue=num_antiguo)
+            
+            if not nuevo_num or nuevo_num.strip() == num_antiguo: return # Canceló o lo dejó igual
+            nuevo_num = nuevo_num.strip()
+            
+            # Validamos el nuevo número con las reglas de Meta y Argentina
+            es_nuevo_valido, nuevo_fmt = mainCode.validar_formato_numero(nuevo_num)
+            
+            # Sacamos el viejo de las listas
+            if es_valido_actual and num_antiguo in row['Telefonos_Validos']:
+                row['Telefonos_Validos'].remove(num_antiguo)
+            elif not es_valido_actual and num_antiguo in row['Telefonos_Invalidos']:
+                row['Telefonos_Invalidos'].remove(num_antiguo)
+                
+            if num_antiguo in row['Telefonos_Raw']:
+                row['Telefonos_Raw'].remove(num_antiguo)
+            row['Telefonos_Raw'].append(nuevo_num)
+            
+            # Metemos el nuevo en la lista correspondiente
+            if es_nuevo_valido:
+                if nuevo_fmt not in row['Telefonos_Validos']:
+                    row['Telefonos_Validos'].append(nuevo_fmt)
+            else:
+                if nuevo_num not in row['Telefonos_Invalidos']:
+                    row['Telefonos_Invalidos'].append(nuevo_num)
+                    
+            # Recalculamos el estado global de la fila
+            row['Es_Valido'] = len(row['Telefonos_Validos']) > 0
+            if row['Telefonos_Validos']: 
+                row['Tel_Formateado'] = " | ".join(row['Telefonos_Validos'])
+            elif row['Telefonos_Invalidos']: 
+                row['Tel_Formateado'] = row['Telefonos_Invalidos'][0]
+            else: 
+                row['Tel_Formateado'] = "Sin número"
+                
+            self.df_filtrado.loc[idx] = row
+            self.df_original.loc[idx] = row
+            
+            self.actualizar_tabla()
+            self.tree.selection_set(idx)
+            self.al_seleccionar_cliente(None)
+            
+            # Mensaje de retroalimentación
+            if es_nuevo_valido:
+                messagebox.showinfo("Número Aceptado", f"El número se corrigió y se validó como: {nuevo_fmt}\n\nQuedó listo para enviar.")
+            else:
+                messagebox.showwarning("Atención", "El número fue editado, pero sigue sin cumplir con el formato de 10 dígitos (quedó en rojo).")
+
+        except Exception as e: print("Error editando:", e)
+
 
     def al_seleccionar_cliente(self, event):
         sel = self.tree.selection()
         if not sel: return
         row = self.df_filtrado.loc[int(sel[0])]
         for w in self.frame_telefonos.winfo_children(): w.destroy()
-        tels = row.get('Telefonos_Raw', [])
-        if not tels: tk.Label(self.frame_telefonos, text="Sin números", fg="red", bg="#f5f5f5").pack(side="left"); return
-        for t in tels:
-            valido, fmt = mainCode.validar_formato_numero(t)
-            bg, fg = ("#E8F5E9", "#2E7D32") if valido else ("#FFEBEE", "#C62828")
+        
+        tels_v = row.get('Telefonos_Validos', [])
+        tels_i = row.get('Telefonos_Invalidos', [])
+        todos = [(t, True) for t in tels_v] + [(t, False) for t in tels_i]
+        
+        if not todos: tk.Label(self.frame_telefonos, text="Sin números", fg="red", bg="#f5f5f5").pack(side="left"); return
+        
+        for tel, es_val in todos:
+            bg, fg = ("#E8F5E9", "#2E7D32") if es_val else ("#FFEBEE", "#C62828")
             f = tk.Frame(self.frame_telefonos, bg=bg, highlightthickness=2, padx=10, pady=5)
             f.pack(side="left", padx=10, fill="y")
-            tk.Label(f, text=t, font=("bold"), bg=bg, fg=fg).pack()
-            tk.Label(f, text=f"✅ {fmt}" if valido else "❌", bg=bg, fg=fg).pack()
+            tk.Label(f, text=tel, font=("bold"), bg=bg, fg=fg).pack()
+            
+            # Contenedor para alinear los botones en horizontal
+            f_btns = tk.Frame(f, bg=bg)
+            f_btns.pack(pady=(5,0))
+            
+            # Botón Alternar
+            lbl_accion = tk.Label(f_btns, text="✅ Quitar" if es_val else "❌ Forzar Uso", bg=bg, fg=fg, cursor="hand2", font=("Segoe UI", 9, "underline"))
+            lbl_accion.pack(side="left", padx=5)
+            lbl_accion.bind("<Button-1>", lambda e, t=tel, v=es_val: self.alternar_estado_numero(t, v))
+            
+            # Botón Editar
+            lbl_editar = tk.Label(f_btns, text="✏️ Editar", bg=bg, fg="#1976D2", cursor="hand2", font=("Segoe UI", 9, "underline"))
+            lbl_editar.pack(side="left", padx=5)
+            lbl_editar.bind("<Button-1>", lambda e, t=tel, v=es_val: self.editar_numero(t, v))
 
     # ==========================================
     # SELECTOR DE BASES Y CARGA

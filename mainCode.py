@@ -4,6 +4,7 @@ import os
 import sys
 import urllib.parse
 import sqlite3
+import re
 from datetime import datetime
 
 # ==========================================
@@ -107,9 +108,6 @@ PLANTILLA_RESCATE = "reactivacion_cliente"
 PLANTILLA_GIRA = "aviso_visita_vendedor"
 PLANTILLA_RECOTIZACION = "recotizacion_prospecto" 
 
-# ==========================================
-# BASE DE DATOS DE VENDEDORES
-# ==========================================
 DB_VENDEDORES = {"Valentín": ["5491145394279"], "Carlos": ["5491165630406"], "Emmanuel": ["5491157528428"]}
 LISTA_OBSERVADOS = []
 
@@ -119,9 +117,6 @@ def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
     elif codigo in ["1", "302", "1/302"]: return "5491157528428"
     else: return "5491145394279"
 
-# ==========================================
-# GENERADOR DE LINKS AUTOCOMPLETABLES
-# ==========================================
 def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     if tipo_mensaje == "Promociones": texto = "Hola, vi las promociones por WhatsApp y busco el [CÓDIGO] de [TIPO DE PRODUCTO] para mi máquina."
     elif tipo_mensaje == "Rescate (Te extrañamos)": texto = "Hola, me llegó el mensaje. Necesito reponer stock de [TIPO DE HERRAMIENTA] para mi taller."
@@ -137,19 +132,30 @@ def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     return f"https://wa.me/{tel}?text={msg_codificado}"
 
 # ==========================================
-# LECTURA DE EXCEL Y VALIDACIÓN
+# LÓGICA EXTRACTIVA DE MULTIPLES NÚMEROS EN UNA CELDA
 # ==========================================
 def extraer_telefonos(row1, row2):
     phones = []
     def check_and_add(val):
         if pd.notna(val):
             val_str = str(val).strip()
-            if sum(c.isdigit() for c in val_str) >= 6: phones.append(val_str)
+            
+            # Limpieza para separar celdas que contienen varios números mezclados
+            for sep in ['/', ',', '|', ';', ' y ', ' o ', '\n', ' - ']:
+                val_str = val_str.replace(sep, '#')
+                
+            partes = val_str.split('#')
+            for parte in partes:
+                # Si este pedacito de texto tiene al menos 6 números, lo consideramos un teléfono potencial
+                if sum(c.isdigit() for c in parte) >= 6: 
+                    phones.append(parte.strip())
+
     for col in [5, 6, 7, 8, 9]:
         if col < len(row1): check_and_add(row1[col])
     if row2 is not None:
         for col in [2, 5, 6, 7, 8, 9]:
             if col < len(row2): check_and_add(row2[col])
+            
     seen = set()
     return [x for x in phones if not (x in seen or seen.add(x))]
 
@@ -196,20 +202,64 @@ def leer_desde_excel(ruta_archivo, tipo_base):
         return registros
     except Exception as e: return []
 
-def formatear_telefono(numero):
-    num_str = str(numero).strip().replace(" ", "").replace("-", "").replace(".", "")
-    num_str = ''.join(filter(str.isdigit, num_str))
-    if not num_str: return "" 
-    if num_str.startswith("0"): num_str = num_str[1:] 
-    if not num_str.startswith("54"): return f"549{num_str}"
+# ==========================================
+# LÓGICA DE DETECCIÓN: "INTELIGENCIA ARGENTINA" 🇦🇷
+# ==========================================
+def formatear_telefono(numero_raw):
+    # Dejar solo números limpios
+    num_str = ''.join(filter(str.isdigit, str(numero_raw)))
+    if not num_str: return ""
+
+    # 1. Si ya tiene el formato final oficial (549 + 10 dígitos) lo dejamos pasar directo
+    if num_str.startswith("549") and len(num_str) == 13:
+        return num_str
+        
+    # 2. Si escribieron 54 pero se comieron el 9 (Ej: 54 11 6552 3112)
+    if num_str.startswith("54") and len(num_str) == 12:
+        return "549" + num_str[2:]
+
+    # Quitamos prefijos internacionales para analizar solo la base argentina pura
+    if num_str.startswith("549"): num_str = num_str[3:]
+    elif num_str.startswith("54"): num_str = num_str[2:]
+
+    # 3. Limpiar "0" de código de área (Ej: 011 -> 11, 0223 -> 223)
+    if num_str.startswith("0"): 
+        num_str = num_str[1:]
+
+    # 4. EXTRACCIÓN QUIRÚRGICA DEL "15" (Ej: 11 15 6552 3112 o 223 15 552 3112)
+    # Busca 2 a 4 dígitos iniciales + 15 + 6 a 8 dígitos finales = Suma 10 en total
+    match_15 = re.match(r'^([1-3]\d{1,3})15(\d{6,8})$', num_str)
+    if match_15:
+        area = match_15.group(1)
+        resto = match_15.group(2)
+        if len(area) + len(resto) == 10:
+            return f"549{area}{resto}"
+
+    # 5. Si omitieron el código de área y clavaron el 15 directo (Ej: 15 6552 3112)
+    if num_str.startswith("15") and len(num_str) == 10:
+        return f"54911{num_str[2:]}" # Le ponemos el 11 de CABA
+        
+    # 6. RESCATE: Número de 8 dígitos sin área (Ej: 45394279 o 65523112)
+    # Asumimos CABA para maximizar coincidencias
+    if len(num_str) == 8 and num_str[0] in "234567":
+        return f"54911{num_str}"
+
+    # 7. Si después de toda esta limpieza quedaron exactamente 10 números limpios
+    if len(num_str) == 10:
+        return f"549{num_str}"
+
+    # Si es irreconocible, se devuelve para que lo descarte y lo marque en ROJO
     return num_str
 
 def validar_formato_numero(numero_raw):
     numero_fmt = formatear_telefono(numero_raw)
     if not numero_fmt: return False, ""
-    if len(numero_fmt) <= 11: return False, numero_fmt 
-    if len(numero_fmt) > 15: return False, numero_fmt
-    return True, numero_fmt
+    
+    # La API de Meta requiere sí o sí: 549 seguido de exactamente 10 números
+    if re.match(r'^549\d{10}$', numero_fmt):
+        return True, numero_fmt
+    
+    return False, numero_fmt
 
 def conectar_y_procesar(nombre_archivo, tipo_base):
     global LISTA_OBSERVADOS
@@ -225,9 +275,11 @@ def conectar_y_procesar(nombre_archivo, tipo_base):
             es_valido, tel_fmt = validar_formato_numero(raw_tel)
             if es_valido: validos.append(tel_fmt)
             else: invalidos.append(raw_tel)
+            
         registro['Telefonos_Validos'] = validos
         registro['Telefonos_Invalidos'] = invalidos
         registro['Es_Valido'] = len(validos) > 0 
+        
         if validos: registro['Tel_Formateado'] = " | ".join(validos)
         elif invalidos: registro['Tel_Formateado'] = invalidos[0]
         else: registro['Tel_Formateado'] = "Sin número"
@@ -247,9 +299,6 @@ def revisar_numeros_problematicos():
 
 def identificar_cols_productos(df): return ['Sierras', 'Cuchillas', 'Mechas', 'Fresas', 'Cabezales']
 
-# ==========================================
-# ENVÍOS API META Y CLASIFICACIÓN DE ERRORES
-# ==========================================
 def _enviar_request(data):
     try:
         headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}", "Content-Type": "application/json"}
@@ -269,22 +318,11 @@ def subir_imagen_whatsapp(ruta):
         return None
     except: return None
 
-# MODIFICADO PARA ACEPTAR EL PORCENTAJE DE DESCUENTO Y EL NOMBRE
 def enviar_promocion(tel, nombre, descuento, link): 
     return _enviar_request({
-        "messaging_product": "whatsapp", 
-        "to": tel, 
-        "type": "template", 
-        "template": {
-            "name": PLANTILLA_PROMOS, 
-            "language": {"code": "es"}, 
-            "components": [{
-                "type": "body", 
-                "parameters": [
-                    {"type": "text", "text": str(nombre)},
-                    {"type": "text", "text": str(descuento)},
-                    {"type": "text", "text": str(link)}
-                ]
+        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
+            "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [{
+                "type": "body", "parameters": [{"type": "text", "text": str(nombre)}, {"type": "text", "text": str(descuento)}, {"type": "text", "text": str(link)}]
             }]
         }
     })
