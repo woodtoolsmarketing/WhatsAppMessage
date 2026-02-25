@@ -99,21 +99,18 @@ class WoodToolsApp:
         frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=10, pady=10, bg="#f5f5f5")
         frame_campana.pack(fill="x", padx=20, pady=10)
 
-        # COLUMNA 0: Tipo Mensaje
         tk.Label(frame_campana, text="Tipo Mensaje:", bg="#f5f5f5").grid(row=0, column=0, sticky="w")
         self.tipo_mensaje_var = tk.StringVar(value="Promociones")
         self.combo_tipo_mensaje = ttk.Combobox(frame_campana, values=["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado", "Novedades", "Recotización"], state="readonly", textvariable=self.tipo_mensaje_var, width=25)
         self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=5, sticky="n")
         self.combo_tipo_mensaje.bind("<<ComboboxSelected>>", self.actualizar_inputs_dinamicos)
 
-        # COLUMNA 1: Enviar Como
         tk.Label(frame_campana, text="Enviar como:", bg="#f5f5f5").grid(row=0, column=1, sticky="w", padx=20)
         opciones_vendedores = ["AUTOMÁTICO (Según Excel)"] + list(mainCode.DB_VENDEDORES.keys())
         self.combo_vendedor = ttk.Combobox(frame_campana, values=opciones_vendedores, state="readonly", width=30)
         self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5, sticky="n")
         self.combo_vendedor.current(0)
 
-        # COLUMNA 2: Entradas Dinámicas (AL COSTADO DEL PREVIEW)
         self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5")
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=10, sticky="nwe")
         
@@ -133,7 +130,6 @@ class WoodToolsApp:
         self.btn_quitar_imagen = tk.Button(self.frame_dinamico, text="❌ Quitar Imagen", command=self.quitar_imagen, fg="red")
         self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red")
 
-        # COLUMNA 3: EL RECUADRO DE VISTA PREVIA
         self.frame_preview = tk.LabelFrame(frame_campana, text="Plantilla de Mensaje (Vista Previa)", bg="#f5f5f5", fg="#555", font=("Segoe UI", 9, "bold"))
         self.frame_preview.grid(row=0, column=3, rowspan=2, padx=30, sticky="nsew")
         
@@ -210,8 +206,6 @@ class WoodToolsApp:
 
     def actualizar_preview(self, event=None):
         tipo = self.tipo_mensaje_var.get()
-        
-        # Generar datos de muestra
         nombre_ej = "[Nombre del Cliente]"
         herramienta_ej = "[Herramienta de interés]"
         if not self.df_filtrado.empty:
@@ -221,7 +215,9 @@ class WoodToolsApp:
                 herramienta_ej = df_ok.iloc[0].get('Fav_Temp', herramienta_ej)
 
         if tipo == "Promociones":
-            preview = f"¡Hola {nombre_ej}! Te acercamos nuestras Ofertas y Herramientas con Promociones exclusivas.\n\nEntrá a este link para más información 👉 [Link con info del cliente]"
+            desc = self.entry_dinamico_texto.get().strip()
+            if not desc: desc = "[%]"
+            preview = f"Hola, {nombre_ej}, al ver tu interés en nuestros productos te ofrecemos un {desc}% de descuento para tus próximas compras. Si te interesa hablanos al 👉 [Link de WhatsApp]"
         elif tipo == "Rescate (Te extrañamos)":
             preview = f"¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej}.\n\nEntrá a este link para más información 👉 [Link de WhatsApp]"
         elif tipo == "Gira Vendedor":
@@ -236,17 +232,13 @@ class WoodToolsApp:
             else:
                 preview = f"Hola, te informamos que pudimos obtener nuevamente stock de {her}. Para conocer cuáles son los modelos entrá a este link: [Link de WhatsApp]"
         elif tipo == "Recotización":
-            preview = f"¡Hola {nombre_ej}! Vimos que en un pasado estuviste interesado en nuestros productos pero no obtuvimos más respuestas de tu parte. Podemos ofrecerte una recotización para {herramienta_ej}.\n\nEntrá a este link para más información 👉 [Link de WhatsApp a Emmanuel]"
+            preview = f"¡Hola {nombre_ej}! Vimos que en un pasado estuviste interesado en nuestros productos pero no obtuvimos más respuestas de tu parte. Podemos ofrecerte una recotización para {herramienta_ej}.\n\nEntrá a este link para más información 👉 [Link a Emmanuel]"
         elif tipo == "Personalizado":
             txt = self.text_dinamico_multilinea.get("1.0", tk.END).strip()
             if not txt: txt = "Escribe tu mensaje libre aquí."
-            
-            # EL SUPERPODER DE LAS ETIQUETAS DINÁMICAS
             preview = txt.replace("[CLIENTE]", nombre_ej).replace("[LINK]", "[Link Autocompletable de WhatsApp]")
-            
             if "[LINK]" not in txt:
                 preview += f"\n\n[Link agregado por defecto al final]"
-            
             preview += "\n\n📎 [Tu Imagen Adjunta se enviará junto con este texto]"
 
         self.lbl_preview_text.config(text=preview)
@@ -258,12 +250,15 @@ class WoodToolsApp:
         if tipo in ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Recotización"]:
             self.lbl_aviso_meta.pack(anchor="w", pady=(0,5))
             
-        if tipo == "Gira Vendedor":
+        if tipo == "Promociones":
+            self.lbl_dinamico_titulo.config(text="Porcentaje de Descuento (Ej: 15):"); self.lbl_dinamico_titulo.pack(anchor="w")
+            self.entry_dinamico_texto.pack(anchor="w", pady=5)
+        elif tipo == "Gira Vendedor":
             self.lbl_dinamico_titulo.config(text="Escribe el Nombre del Vendedor:"); self.lbl_dinamico_titulo.pack(anchor="w")
             self.entry_dinamico_texto.pack(anchor="w", pady=5)
         elif tipo == "Personalizado":
             self.lbl_dinamico_titulo.config(text="Mensaje Libre a tu medida:"); self.lbl_dinamico_titulo.pack(anchor="w")
-            self.lbl_tip_tags.pack(anchor="w", pady=(0, 5)) # Mostramos el tip de las etiquetas
+            self.lbl_tip_tags.pack(anchor="w", pady=(0, 5)) 
             self.text_dinamico_multilinea.pack(anchor="w", pady=5)
         elif tipo == "Novedades":
             self.lbl_novedad_subtipo.pack(anchor="w"); self.combo_novedad_subtipo.pack(anchor="w", pady=(0,5))
@@ -464,7 +459,11 @@ class WoodToolsApp:
         if self.ruta_imagen_seleccionada: params['ruta_imagen'] = self.ruta_imagen_seleccionada
         tipo = self.tipo_mensaje_var.get()
         
-        if tipo == "Novedades":
+        if tipo == "Promociones":
+            desc = self.entry_dinamico_texto.get().strip()
+            if not desc: return messagebox.showerror("Error", "Debes ingresar un porcentaje de descuento (solo el número).")
+            params['descuento'] = desc
+        elif tipo == "Novedades":
             her = self.combo_novedad_herramienta.get()
             params['subtipo_novedad'] = self.combo_novedad_subtipo.get()
             params['herramienta_novedad'] = her
@@ -520,13 +519,12 @@ class WoodToolsApp:
                     mainCode.enviar_solo_imagen(t, media_id)
                     time.sleep(0.5)
                 
-                if tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link)
-                elif tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, "Promociones exclusivas", "Herramientas", "Ofertas", f"Contacto: {link}")
+                if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params['descuento'], link)
+                elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link)
                 elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), f"Contacto: {link}")
                 elif tipo == "Gira Vendedor": res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", f"Contacto: {link}")
                 elif tipo == "Recotización": res, tipo_error = mainCode.enviar_recotizacion(t, link)
                 elif tipo == "Personalizado": 
-                    # EL SUPERPODER EN ACCIÓN
                     txt_base = params.get('texto_extra','')
                     caption_final = txt_base.replace("[CLIENTE]", row['Cliente']).replace("[LINK]", link)
                     if "[LINK]" not in txt_base:

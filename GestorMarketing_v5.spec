@@ -5,7 +5,7 @@ a = Analysis(
     ['interfaz.py'],
     pathex=[],
     binaries=[],
-    datas=[('Imagenes', 'Imagenes')],
+    datas=[('Imagenes\\logo.ico', 'Imagenes'), ('Imagenes\\logo.png', 'Imagenes')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
