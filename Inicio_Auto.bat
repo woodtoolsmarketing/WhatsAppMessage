@@ -4,5 +4,7 @@ title Iniciando WoodTools...
 timeout /t 15 /nobreak > NUL
 
 :: Ejecuta tu actualizador principal
-call "%~dp0Actualizador_WoodTools.bat"
+call "%~dp0ACTUALIZADOR.bat"
 exit
+
+

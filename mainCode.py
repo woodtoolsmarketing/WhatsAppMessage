@@ -132,133 +132,91 @@ def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     return f"https://wa.me/{tel}?text={msg_codificado}"
 
 # ==========================================
-# LÓGICA EXTRACTIVA DE MULTIPLES NÚMEROS EN UNA CELDA
+# LECTOR CON ESCUDO ANTI-CEROS
 # ==========================================
-def extraer_telefonos(row1, row2):
-    phones = []
-    def check_and_add(val):
-        if pd.notna(val):
-            val_str = str(val).strip()
-            
-            # Limpieza para separar celdas que contienen varios números mezclados
-            for sep in ['/', ',', '|', ';', ' y ', ' o ', '\n', ' - ']:
-                val_str = val_str.replace(sep, '#')
-                
-            partes = val_str.split('#')
-            for parte in partes:
-                # Si este pedacito de texto tiene al menos 6 números, lo consideramos un teléfono potencial
-                if sum(c.isdigit() for c in parte) >= 6: 
-                    phones.append(parte.strip())
-
-    for col in [5, 6, 7, 8, 9]:
-        if col < len(row1): check_and_add(row1[col])
-    if row2 is not None:
-        for col in [2, 5, 6, 7, 8, 9]:
-            if col < len(row2): check_and_add(row2[col])
-            
-    seen = set()
-    return [x for x in phones if not (x in seen or seen.add(x))]
-
 def leer_desde_excel(ruta_archivo, tipo_base):
     if not os.path.exists(ruta_archivo): return []
     try:
-        if ruta_archivo.endswith('.csv'): df = pd.read_csv(ruta_archivo, header=None if tipo_base == "clientes" else 0, dtype=str)
-        else: df = pd.read_excel(ruta_archivo, header=None if tipo_base == "clientes" else 0, dtype=str)
+        if ruta_archivo.endswith('.csv'): df = pd.read_csv(ruta_archivo, dtype=str)
+        else: df = pd.read_excel(ruta_archivo, dtype=str)
         
+        df = df.fillna("")
         registros = []
+        
         if tipo_base == "prospectos":
             for _, row in df.iterrows():
-                cliente_dict = {'Cliente': str(row.get('Nombres', 'Sin Nombre')).strip(), 'Telefonos_Raw': [str(row.get('Número', ''))], 'Vendedor': str(row.get('Vendedor', '5001')).strip(), 'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip(), 'Zona': str(row.get('Producto por el que consultó', '')).strip()}
+                num_raw = str(row.get('Número', row.get('Primer número', ''))).strip()
+                num_only = ''.join(filter(str.isdigit, num_raw))
+                
+                # ESCUDO: Si empieza con 3 ceros seguidos, se elimina
+                tels = [] if num_only.startswith("000") else ([num_raw] if num_raw else [])
+                    
+                cliente_dict = {
+                    'Cliente': str(row.get('Nombres', row.get('Nombre', 'Sin Nombre'))).strip(), 
+                    'Telefonos_Raw': tels, 
+                    'Vendedor': str(row.get('Vendedor', '5001')).strip(), 
+                    'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip(), 
+                    'Zona': str(row.get('Producto por el que consultó', '')).strip()
+                }
                 registros.append(cliente_dict)
             return registros
 
-        start_index = 0
-        for idx, row in df.iterrows():
-            if str(row[0]).isdigit() and len(str(row[0])) > 5:
-                start_index = idx; break
-        
-        data_rows = df.iloc[start_index:].reset_index(drop=True)
-        i = 0
-        while i < len(data_rows):
-            row = data_rows.iloc[i]
-            code = str(row[0])
-            if pd.notna(code) and code.strip().isdigit() and len(code.strip()) > 3:
-                cliente_dict = {'Número de cliente': code.strip(), 'Cliente': str(row[1]).strip() if pd.notna(row[1]) else "Cliente Sin Nombre", 'Zona': '0', 'Vendedor': '0'}
-                row2 = None
-                if i + 1 < len(data_rows):
-                    r2 = data_rows.iloc[i+1]
-                    if pd.isna(r2[0]) or not str(r2[0]).strip().isdigit():
-                        row2 = r2
-                        if pd.notna(r2[1]): cliente_dict['Vendedor'] = str(r2[1]).strip()
-                        if i + 2 < len(data_rows):
-                            r3 = data_rows.iloc[i+2]
-                            if (pd.isna(r3[0]) or not str(r3[0]).strip()) and pd.notna(r3[2]) and str(r3[2]).strip().isdigit():
-                                cliente_dict['Zona'] = str(r3[2]).strip()
-                                i += 1 
-                        i += 1 
-                cliente_dict['Telefonos_Raw'] = extraer_telefonos(row, row2)
-                registros.append(cliente_dict)
-            i += 1
+        # PARA CLIENTES (BASE OPTIMIZADA)
+        for _, row in df.iterrows():
+            tels_raw = []
+            for col in ['Primer número', 'Segundo número', 'Tercer número', 'Cuarto número', 'Quinto número']:
+                if col in row and str(row[col]).strip():
+                    val_str = str(row[col]).strip()
+                    val_num = ''.join(filter(str.isdigit, val_str))
+                    # ESCUDO: Si empieza con 3 ceros seguidos (ID Cliente), se ignora por completo
+                    if not val_num.startswith("000"):
+                        tels_raw.append(val_str)
+            
+            cliente_dict = {
+                'Número de cliente': str(row.get('Número de cliente', '')).strip(),
+                'Cliente': str(row.get('Nombre', 'Cliente Sin Nombre')).strip() or "Cliente Sin Nombre",
+                'Zona': str(row.get('Zona del cliente', '0')).strip() or '0',
+                'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
+                'Telefonos_Raw': tels_raw
+            }
+            registros.append(cliente_dict)
+            
         return registros
-    except Exception as e: return []
+    except Exception as e: 
+        print(f"Error leyendo Excel: {e}")
+        return []
 
 # ==========================================
 # LÓGICA DE DETECCIÓN: "INTELIGENCIA ARGENTINA" 🇦🇷
 # ==========================================
 def formatear_telefono(numero_raw):
-    # Dejar solo números limpios
     num_str = ''.join(filter(str.isdigit, str(numero_raw)))
     if not num_str: return ""
 
-    # 1. Si ya tiene el formato final oficial (549 + 10 dígitos) lo dejamos pasar directo
-    if num_str.startswith("549") and len(num_str) == 13:
-        return num_str
-        
-    # 2. Si escribieron 54 pero se comieron el 9 (Ej: 54 11 6552 3112)
-    if num_str.startswith("54") and len(num_str) == 12:
-        return "549" + num_str[2:]
+    if num_str.startswith("549") and len(num_str) == 13: return num_str
+    if num_str.startswith("54") and len(num_str) == 12: return "549" + num_str[2:]
 
-    # Quitamos prefijos internacionales para analizar solo la base argentina pura
     if num_str.startswith("549"): num_str = num_str[3:]
     elif num_str.startswith("54"): num_str = num_str[2:]
 
-    # 3. Limpiar "0" de código de área (Ej: 011 -> 11, 0223 -> 223)
-    if num_str.startswith("0"): 
-        num_str = num_str[1:]
+    if num_str.startswith("0"): num_str = num_str[1:]
 
-    # 4. EXTRACCIÓN QUIRÚRGICA DEL "15" (Ej: 11 15 6552 3112 o 223 15 552 3112)
-    # Busca 2 a 4 dígitos iniciales + 15 + 6 a 8 dígitos finales = Suma 10 en total
     match_15 = re.match(r'^([1-3]\d{1,3})15(\d{6,8})$', num_str)
     if match_15:
-        area = match_15.group(1)
-        resto = match_15.group(2)
-        if len(area) + len(resto) == 10:
-            return f"549{area}{resto}"
+        area = match_15.group(1); resto = match_15.group(2)
+        if len(area) + len(resto) == 10: return f"549{area}{resto}"
 
-    # 5. Si omitieron el código de área y clavaron el 15 directo (Ej: 15 6552 3112)
-    if num_str.startswith("15") and len(num_str) == 10:
-        return f"54911{num_str[2:]}" # Le ponemos el 11 de CABA
-        
-    # 6. RESCATE: Número de 8 dígitos sin área (Ej: 45394279 o 65523112)
-    # Asumimos CABA para maximizar coincidencias
-    if len(num_str) == 8 and num_str[0] in "234567":
-        return f"54911{num_str}"
+    if num_str.startswith("15") and len(num_str) == 10: return f"54911{num_str[2:]}"
+    if len(num_str) == 8 and num_str[0] in "234567": return f"54911{num_str}"
+    if len(num_str) == 10: return f"549{num_str}"
 
-    # 7. Si después de toda esta limpieza quedaron exactamente 10 números limpios
-    if len(num_str) == 10:
-        return f"549{num_str}"
-
-    # Si es irreconocible, se devuelve para que lo descarte y lo marque en ROJO
     return num_str
 
 def validar_formato_numero(numero_raw):
     numero_fmt = formatear_telefono(numero_raw)
     if not numero_fmt: return False, ""
     
-    # La API de Meta requiere sí o sí: 549 seguido de exactamente 10 números
-    if re.match(r'^549\d{10}$', numero_fmt):
-        return True, numero_fmt
-    
+    if re.match(r'^549\d{10}$', numero_fmt): return True, numero_fmt
     return False, numero_fmt
 
 def conectar_y_procesar(nombre_archivo, tipo_base):
