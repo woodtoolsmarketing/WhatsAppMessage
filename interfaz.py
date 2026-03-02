@@ -56,7 +56,7 @@ class WoodToolsApp:
         frame_top.pack(fill="x")
         self.cargar_logo(frame_top)
 
-        btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base", command=self.abrir_selector_bases, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_cargar = tk.Button(frame_top, text="🔄 Cargar Base Optimizada", command=self.abrir_selector_bases, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
         
         btn_verificar = tk.Button(frame_top, text="🔍 Descartes", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
@@ -412,33 +412,37 @@ class WoodToolsApp:
             lbl_editar.bind("<Button-1>", lambda e, t=tel, v=es_val: self.editar_numero(t, v))
 
     # ==========================================
-    # SELECTOR DE BASES Y CARGA
+    # SELECTOR DE BASES Y CARGA AUTOMÁTICA
     # ==========================================
     def abrir_selector_bases(self):
+        # Restauramos el menú emergente (Toplevel) para que busque directamente en la carpeta dist
         vent_selector = tk.Toplevel(self.root)
         vent_selector.title("Selector de Bases de Datos")
-        vent_selector.geometry("400x200")
+        vent_selector.geometry("450x200")
         vent_selector.configure(bg="#f5f5f5")
         
         tk.Label(vent_selector, text="¿Qué base de datos deseas procesar?", font=("Segoe UI", 12, "bold"), bg="#f5f5f5").pack(pady=20)
         
-        btn_clientes = tk.Button(vent_selector, text="📘 Base de Clientes (wt)", width=25, bg="#4CAF50", fg="white", font=("bold"), 
-                                 command=lambda: self._iniciar_carga("Base de datos wt.xlsx", "clientes", vent_selector))
+        # Botón para cargar automáticamente el archivo optimizado
+        btn_clientes = tk.Button(vent_selector, text="📘 Base_WoodTools_Optimizada_20260226", width=40, bg="#4CAF50", fg="white", font=("bold"), 
+                                 command=lambda: self._iniciar_carga("Base_WoodTools_Optimizada_20260226.xlsx", "clientes", vent_selector))
         btn_clientes.pack(pady=5)
         
-        btn_prospectos = tk.Button(vent_selector, text="📙 Base de Prospectos (wt)", width=25, bg="#FF9800", fg="white", font=("bold"), 
+        # Botón para cargar prospectos por si lo seguís usando
+        btn_prospectos = tk.Button(vent_selector, text="📙 Base de Prospectos (wt)", width=40, bg="#FF9800", fg="white", font=("bold"), 
                                    command=lambda: self._iniciar_carga("Base de prospectos wt.xlsx", "prospectos", vent_selector)) 
         btn_prospectos.pack(pady=5)
 
     def _iniciar_carga(self, archivo, tipo, ventana):
-        ventana.destroy()
+        if ventana:
+            ventana.destroy()
         self.tipo_base_actual = tipo
         threading.Thread(target=self._hilo_carga, args=(archivo, tipo)).start()
     
     def _hilo_carga(self, archivo, tipo):
         df = mainCode.conectar_y_procesar(archivo, tipo)
         if df.empty: 
-            return self.root.after(0, lambda: messagebox.showerror("Error", f"Base vacía o no se encontró '{archivo}' en la carpeta raíz ni en 'dist'."))
+            return self.root.after(0, lambda: messagebox.showerror("Error", f"Base vacía o no se pudo leer '{archivo}'. Asegurate de que esté en la misma carpeta del programa o en 'dist'."))
             
         for c in ['Zona', 'Vendedor']: df[c] = df[c].fillna("0").astype(str)
         if tipo == "clientes":
@@ -453,7 +457,7 @@ class WoodToolsApp:
         herramientas = ["Todos"] + mainCode.identificar_cols_productos(df)
         self.root.after(0, lambda: self.combo_herramientas.config(values=herramientas))
         self.root.after(0, lambda: self.combo_herramientas.current(0))
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} regs ({tipo.upper()})", fg="green"))
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} registros", fg="green"))
 
     def actualizar_tabla(self):
         if self.tipo_base_actual == "prospectos":
