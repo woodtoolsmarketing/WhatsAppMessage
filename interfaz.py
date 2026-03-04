@@ -13,6 +13,10 @@ from datetime import datetime
 # --- IMPORTAMOS TU BACKEND (Google Sheets) ---
 import mainCode 
 
+# Definición del color corporativo oficial de WoodTools para el fondo principal
+COLOR_ROJO_WT = "#a41e22" 
+COLOR_PANELES = "#f5f5f5"
+
 def obtener_ruta_interna(ruta_relativa):
     try:
         ruta_base = sys._MEIPASS
@@ -25,6 +29,12 @@ class WoodToolsApp:
         self.root = root
         self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM")
         self.root.geometry("1500x900") 
+        
+        # ¡ESTA ES LA LÍNEA MÁGICA PARA ABRIR EN PANTALLA COMPLETA!
+        self.root.state('zoomed') 
+        
+        # Seteamos el fondo de la ventana principal al Rojo WoodTools
+        self.root.configure(bg=COLOR_ROJO_WT) 
         
         self.cancelar_envio = False
         self.tipo_base_actual = "clientes" 
@@ -51,92 +61,91 @@ class WoodToolsApp:
         self.ruta_imagen_seleccionada = None
         
         # ==========================================
-        # 1. CABECERA
+        # 1. CABECERA (Fondo Rojo WoodTools)
         # ==========================================
-        frame_top = tk.Frame(root, pady=10, padx=10, bg="#e0e0e0")
+        frame_top = tk.Frame(root, pady=5, padx=10, bg=COLOR_ROJO_WT)
         frame_top.pack(fill="x")
-        self.cargar_logo(frame_top)
+        self.cargar_logo_con_ovalo(frame_top)
 
-        # Botón actualizado para Google Sheets
         btn_cargar = tk.Button(frame_top, text="☁️ Descargar Base de la Nube", command=self.abrir_selector_bases, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_cargar.pack(side=tk.LEFT, padx=10)
         
         btn_verificar = tk.Button(frame_top, text="🔍 Descartes", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
         btn_verificar.pack(side=tk.LEFT, padx=10)
         
-        btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte Mensual / Anual", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
         
-        self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="gray", bg="#e0e0e0")
+        self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
         # ==========================================
-        # 2. ÁREA DE FILTROS
+        # 2. ÁREA DE FILTROS (Panel Gris)
         # ==========================================
-        frame_filtros = tk.LabelFrame(root, text="Filtros", padx=10, pady=10)
-        frame_filtros.pack(fill="x", padx=20, pady=5)
+        frame_filtros = tk.LabelFrame(root, text="Filtros", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")) 
+        frame_filtros.pack(fill="x", padx=20, pady=2)
         
-        tk.Label(frame_filtros, text="Nombre:").grid(row=0, column=0)
+        tk.Label(frame_filtros, text="Nombre:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=0)
         self.entry_nombre = tk.Entry(frame_filtros)
         self.entry_nombre.grid(row=0, column=1, padx=5)
         self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
         
-        tk.Label(frame_filtros, text="Zona/Interés:").grid(row=0, column=2)
+        tk.Label(frame_filtros, text="Zona/Interés:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=2)
         self.combo_zona = ttk.Combobox(frame_filtros, state="readonly", width=10)
         self.combo_zona.grid(row=0, column=3)
         self.combo_zona.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
-        tk.Label(frame_filtros, text="Favorito:").grid(row=0, column=4)
+        tk.Label(frame_filtros, text="Favorito:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=4)
         self.combo_herramientas = ttk.Combobox(frame_filtros, state="readonly")
         self.combo_herramientas.grid(row=0, column=5)
         self.combo_herramientas.bind("<<ComboboxSelected>>", self.aplicar_filtros)
 
         tk.Button(frame_filtros, text="Limpiar", command=self.limpiar_filtros).grid(row=0, column=6, padx=15)
-        self.lbl_conteo = tk.Label(frame_filtros, text="Regs: 0", font=("Segoe UI", 9, "bold"), fg="#2196F3")
+        self.lbl_conteo = tk.Label(frame_filtros, text="Regs: 0", font=("Segoe UI", 10, "bold"), fg="#2196F3", bg=COLOR_PANELES)
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
         # ==========================================
-        # 3. CONFIGURACIÓN DEL MENSAJE Y PREVIEW
+        # 3. CONFIGURACIÓN DEL MENSAJE (Mucho más chato)
         # ==========================================
-        frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=10, pady=10, bg="#f5f5f5")
-        frame_campana.pack(fill="x", padx=20, pady=10)
+        frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
+        frame_campana.pack(fill="x", padx=20, pady=2)
 
-        tk.Label(frame_campana, text="Tipo Mensaje:", bg="#f5f5f5").grid(row=0, column=0, sticky="w")
+        tk.Label(frame_campana, text="Tipo Mensaje:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
         self.tipo_mensaje_var = tk.StringVar(value="Promociones")
         self.combo_tipo_mensaje = ttk.Combobox(frame_campana, values=["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Personalizado", "Novedades", "Recotización"], state="readonly", textvariable=self.tipo_mensaje_var, width=25)
-        self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=5, sticky="n")
+        self.combo_tipo_mensaje.grid(row=1, column=0, padx=5, pady=2, sticky="n")
         self.combo_tipo_mensaje.bind("<<ComboboxSelected>>", self.actualizar_inputs_dinamicos)
 
-        tk.Label(frame_campana, text="Enviar como:", bg="#f5f5f5").grid(row=0, column=1, sticky="w", padx=20)
+        tk.Label(frame_campana, text="Enviar como:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", padx=10)
         opciones_vendedores = ["AUTOMÁTICO (Según Planilla)"] + list(mainCode.DB_VENDEDORES.keys())
-        self.combo_vendedor = ttk.Combobox(frame_campana, values=opciones_vendedores, state="readonly", width=30)
-        self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5, sticky="n")
+        self.combo_vendedor = ttk.Combobox(frame_campana, values=opciones_vendedores, state="readonly", width=25)
+        self.combo_vendedor.grid(row=1, column=1, padx=10, pady=2, sticky="n")
         self.combo_vendedor.current(0)
 
-        self.frame_dinamico = tk.Frame(frame_campana, bg="#f5f5f5")
+        self.frame_dinamico = tk.Frame(frame_campana, bg=COLOR_PANELES)
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=10, sticky="nwe")
         
-        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg="#f5f5f5", font=("Arial", 9, "bold"))
-        self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=35)
-        self.text_dinamico_multilinea = tk.Text(self.frame_dinamico, width=45, height=6, font=("Arial", 10), relief="solid", bd=1)
+        self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg=COLOR_PANELES, fg="black", font=("Arial", 9, "bold"))
+        self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=30)
+        self.text_dinamico_multilinea = tk.Text(self.frame_dinamico, width=40, height=3, font=("Arial", 10), relief="solid", bd=1)
         
-        self.lbl_novedad_subtipo = tk.Label(self.frame_dinamico, text="Tipo:", bg="#f5f5f5", font=("Arial", 8, "bold"))
-        self.combo_novedad_subtipo = ttk.Combobox(self.frame_dinamico, values=["Ingresos", "Reposición de stock"], state="readonly", width=25)
-        self.lbl_novedad_herramienta = tk.Label(self.frame_dinamico, text="Herramienta:", bg="#f5f5f5", font=("Arial", 8, "bold"))
-        self.combo_novedad_herramienta = ttk.Combobox(self.frame_dinamico, state="readonly", width=25)
+        self.lbl_novedad_subtipo = tk.Label(self.frame_dinamico, text="Tipo:", bg=COLOR_PANELES, fg="black", font=("Arial", 8, "bold"))
+        self.combo_novedad_subtipo = ttk.Combobox(self.frame_dinamico, values=["Ingresos", "Reposición de stock"], state="readonly", width=20)
+        self.lbl_novedad_herramienta = tk.Label(self.frame_dinamico, text="Herramienta:", bg=COLOR_PANELES, fg="black", font=("Arial", 8, "bold"))
+        self.combo_novedad_herramienta = ttk.Combobox(self.frame_dinamico, state="readonly", width=20)
 
-        self.lbl_aviso_meta = tk.Label(self.frame_dinamico, text="🔒 Estructura fijada por plantilla de Meta.", fg="#d32f2f", bg="#f5f5f5", font=("Arial", 8, "bold"))
-        self.lbl_tip_tags = tk.Label(self.frame_dinamico, text="💡 Tip: Usa [CLIENTE] y [LINK] para acomodarlos donde quieras.", fg="#1976d2", bg="#f5f5f5", font=("Arial", 8, "italic"))
+        self.lbl_aviso_meta = tk.Label(self.frame_dinamico, text="🔒 Plantilla Meta", fg="#d32f2f", bg=COLOR_PANELES, font=("Arial", 8, "bold")) 
+        self.lbl_tip_tags = tk.Label(self.frame_dinamico, text="💡 Usa [CLIENTE] y [LINK]", fg="#1976d2", bg=COLOR_PANELES, font=("Arial", 8, "italic"))
 
         self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen", command=self.seleccionar_imagen)
         self.btn_quitar_imagen = tk.Button(self.frame_dinamico, text="❌ Quitar Imagen", command=self.quitar_imagen, fg="red")
-        self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg="#f5f5f5", fg="red")
+        self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg=COLOR_PANELES, fg="red")
 
-        self.frame_preview = tk.LabelFrame(frame_campana, text="Plantilla de Mensaje (Vista Previa)", bg="#f5f5f5", fg="#555", font=("Segoe UI", 9, "bold"))
-        self.frame_preview.grid(row=0, column=3, rowspan=2, padx=30, sticky="nsew")
+        self.frame_preview = tk.LabelFrame(frame_campana, text="Vista Previa", bg=COLOR_PANELES, fg="#555", font=("Segoe UI", 9, "bold"))
+        self.frame_preview.grid(row=0, column=3, rowspan=2, padx=10, sticky="nsew")
         
-        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=7, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=10, pady=10, fg="#333")
-        self.lbl_preview_text.pack(padx=10, pady=5, fill="both", expand=True)
+        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=4, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=5, pady=5, fg="#333")
+        self.lbl_preview_text.pack(padx=5, pady=2, fill="both", expand=True)
 
         self.entry_dinamico_texto.bind("<KeyRelease>", self.actualizar_preview)
         self.text_dinamico_multilinea.bind("<KeyRelease>", self.actualizar_preview)
@@ -146,32 +155,33 @@ class WoodToolsApp:
         self.actualizar_inputs_dinamicos() 
 
         # ==========================================
-        # 4. BOTONES DE ACCIÓN
+        # 4. BOTONES DE ACCIÓN Y TABLAS
         # ==========================================
-        frame_accion = tk.Frame(root, pady=15, bg="#333333")
-        frame_accion.pack(fill="x", side="bottom")
         
-        self.lbl_progreso = tk.Label(frame_accion, text="Sistema listo.", fg="white", bg="#333333", font=("Segoe UI", 10))
-        self.lbl_progreso.pack(pady=5)
+        # Panel de botones comprimido
+        frame_accion = tk.LabelFrame(root, text="Panel de Control", pady=5, padx=20, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"), relief="groove", bd=2)
+        frame_accion.pack(fill="x", side="bottom", padx=20, pady=5)
         
-        frame_botones_accion = tk.Frame(frame_accion, bg="#333333")
-        frame_botones_accion.pack(pady=10)
+        self.lbl_progreso = tk.Label(frame_accion, text="Sistema listo.", fg="black", bg=COLOR_PANELES, font=("Segoe UI", 10, "bold"))
+        self.lbl_progreso.pack(pady=2)
+        
+        frame_botones_accion = tk.Frame(frame_accion, bg=COLOR_PANELES)
+        frame_botones_accion.pack(pady=2)
 
         self.btn_enviar = tk.Button(frame_botones_accion, text="🚀 ENVIAR A TODOS", command=self.iniciar_envio, bg="#2196F3", fg="white", font=("Segoe UI", 12, "bold"), width=20)
         self.btn_enviar.grid(row=0, column=0, padx=15)
 
-        self.btn_cancelar = tk.Button(frame_botones_accion, text="🛑 CANCELAR ENVÍO", command=self.comando_cancelar_envio, bg="#f44336", fg="white", font=("Segoe UI", 12, "bold"), width=20, state="disabled")
+        self.btn_cancelar = tk.Button(frame_botones_accion, text="🛑 CANCELAR ENVÍO", command=self.comando_cancelar_envio, bg=COLOR_ROJO_WT, fg="white", font=("Segoe UI", 12, "bold"), width=20, state="disabled")
         self.btn_cancelar.grid(row=0, column=1, padx=15)
 
-        # ==========================================
-        # 5. TABLAS DE RESULTADOS
-        # ==========================================
-        self.frame_telefonos = tk.LabelFrame(root, text="🔍 Gestión de Teléfonos (Clic en tabla para ver)", padx=10, pady=10, bg="#f5f5f5", font=("Segoe UI", 9, "bold"))
-        self.frame_telefonos.pack(fill="x", padx=20, pady=5, side="bottom")
+        # Ahora los teléfonos están arriba de los controles pero con buen espacio
+        self.frame_telefonos = tk.LabelFrame(root, text="🔍 Gestión de Teléfonos (Clic en la fila superior para ver)", padx=5, pady=5, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
+        self.frame_telefonos.pack(fill="x", padx=20, pady=2, side="bottom")
         self._limpiar_panel_telefonos()
 
-        frame_tabla = tk.Frame(root)
-        frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
+        # Al reducir todo lo de arriba, la tabla AHORA sí tiene espacio libre
+        frame_tabla = tk.Frame(root, bg=COLOR_ROJO_WT)
+        frame_tabla.pack(fill="both", expand=True, padx=20, pady=2)
         self.tree = ttk.Treeview(frame_tabla, columns=("Cli", "Tel", "Vend", "Zona", "Est"), show="headings")
         self.tree.heading("Cli", text="Cliente"); self.tree.column("Cli", width=200)
         self.tree.heading("Tel", text="Se enviará a:"); self.tree.column("Tel", width=250)
@@ -185,19 +195,32 @@ class WoodToolsApp:
         self.tree.configure(yscroll=scroll.set); scroll.pack(side="right", fill="y"); self.tree.pack(fill="both", expand=True)
 
     # ==========================================
-    # FUNCIONES DE INTERFAZ Y PREVIEW
+    # FUNCIONES DE INTERFAZ Y PREVIEW 
     # ==========================================
-    def cargar_logo(self, parent):
+    def cargar_logo_con_ovalo(self, parent):
         ruta_1 = obtener_ruta_interna(r"Imagenes\logo.png")
         ruta_2 = obtener_ruta_interna("logo.png")
         ruta_final = ruta_1 if os.path.exists(ruta_1) else ruta_2
+        
         if os.path.exists(ruta_final):
             try:
-                img = Image.open(ruta_final)
-                w, h = img.size; new_w = int((65/h)*w)
-                self.logo_img = ImageTk.PhotoImage(img.resize((new_w, 65), Image.Resampling.LANCZOS))
-                tk.Label(parent, image=self.logo_img, bg="#e0e0e0").pack(side=tk.RIGHT, padx=15)
-            except: pass
+                img_pil = Image.open(ruta_final)
+                h_deseado = 55 
+                w, h = img_pil.size
+                new_w = int((h_deseado/h)*w)
+                img_resized = img_pil.resize((new_w, h_deseado), Image.Resampling.LANCZOS)
+                self.logo_img = ImageTk.PhotoImage(img_resized)
+                
+                ovalo_w = new_w + 30 
+                ovalo_h = h_deseado + 10 
+                
+                canvas = tk.Canvas(parent, width=ovalo_w, height=ovalo_h, bg=COLOR_ROJO_WT, highlightthickness=0)
+                canvas.pack(side=tk.RIGHT, padx=15)
+
+                canvas.create_oval(2, 2, ovalo_w-2, ovalo_h-2, fill=COLOR_PANELES, outline=COLOR_PANELES)
+                canvas.create_image(ovalo_w/2, ovalo_h/2, image=self.logo_img)
+            except Exception as e: 
+                print(f"Error cargando logo: {e}")
 
     def verificar_observados(self):
         msg = mainCode.revisar_numeros_problematicos()
@@ -247,36 +270,40 @@ class WoodToolsApp:
 
     def actualizar_inputs_dinamicos(self, e=None):
         tipo = self.tipo_mensaje_var.get()
-        for w in self.frame_dinamico.winfo_children(): w.pack_forget()
+        for w in self.frame_dinamico.winfo_children():
+            w.pack_forget()
+            if isinstance(w, tk.Label) and w not in [self.lbl_aviso_meta, self.lbl_tip_tags, self.lbl_nombre_imagen]:
+                w.config(bg=COLOR_PANELES, fg="black")
         
         if tipo in ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Recotización"]:
-            self.lbl_aviso_meta.pack(anchor="w", pady=(0,5))
+            self.lbl_aviso_meta.pack(anchor="w", pady=(0,2))
             
         if tipo == "Promociones":
             self.lbl_dinamico_titulo.config(text="Porcentaje de Descuento (Ej: 15):"); self.lbl_dinamico_titulo.pack(anchor="w")
-            self.entry_dinamico_texto.pack(anchor="w", pady=5)
+            self.entry_dinamico_texto.pack(anchor="w", pady=2)
         elif tipo == "Gira Vendedor":
             self.lbl_dinamico_titulo.config(text="Escribe el Nombre del Vendedor:"); self.lbl_dinamico_titulo.pack(anchor="w")
-            self.entry_dinamico_texto.pack(anchor="w", pady=5)
+            self.entry_dinamico_texto.pack(anchor="w", pady=2)
         elif tipo == "Personalizado":
             self.lbl_dinamico_titulo.config(text="Mensaje Libre a tu medida:"); self.lbl_dinamico_titulo.pack(anchor="w")
-            self.lbl_tip_tags.pack(anchor="w", pady=(0, 5)) 
-            self.text_dinamico_multilinea.pack(anchor="w", pady=5)
+            self.lbl_tip_tags.pack(anchor="w", pady=(0, 2)) 
+            self.text_dinamico_multilinea.pack(anchor="w", pady=2)
         elif tipo == "Novedades":
-            self.lbl_novedad_subtipo.pack(anchor="w"); self.combo_novedad_subtipo.pack(anchor="w", pady=(0,5))
+            self.lbl_novedad_subtipo.pack(anchor="w"); self.combo_novedad_subtipo.pack(anchor="w", pady=(0,2))
             if not self.combo_novedad_subtipo.get(): self.combo_novedad_subtipo.current(0)
             self.lbl_novedad_herramienta.pack(anchor="w"); self.combo_novedad_herramienta.pack(anchor="w")
             self.combo_novedad_herramienta['values'] = mainCode.identificar_cols_productos(pd.DataFrame())
             if not self.combo_novedad_herramienta.get(): self.combo_novedad_herramienta.current(0)
         elif tipo == "Recotización":
-            tk.Label(self.frame_dinamico, text="El link apuntará automáticamente a Emmanuel.", fg="blue", bg="#f5f5f5").pack(anchor="w", pady=5)
+            tk.Label(self.frame_dinamico, text="El link apuntará a Emmanuel.", fg="blue", bg=COLOR_PANELES, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=2)
 
-        ttk.Separator(self.frame_dinamico, orient='horizontal').pack(fill='x', pady=10)
+        ttk.Separator(self.frame_dinamico, orient='horizontal').pack(fill='x', pady=5)
         
         if tipo != "Recotización":
-            self.btn_subir_imagen.config(text="📂 Adjuntar Imagen (OBLIGATORIO)" if tipo == "Personalizado" else "📂 Adjuntar Imagen (OPCIONAL)")
+            self.btn_subir_imagen.config(text="📂 Adjuntar Imagen" if tipo != "Personalizado" else "📂 Adjuntar (Oblig.)")
             self.btn_subir_imagen.pack(anchor="w", pady=(0,2))
             if self.ruta_imagen_seleccionada: self.btn_quitar_imagen.pack(anchor="w", pady=(0,2))
+            self.lbl_nombre_imagen.config(bg=COLOR_PANELES)
             self.lbl_nombre_imagen.pack(anchor="w")
 
         self.actualizar_preview()
@@ -290,9 +317,9 @@ class WoodToolsApp:
 
     def _limpiar_panel_telefonos(self):
         for w in self.frame_telefonos.winfo_children(): w.destroy()
-        tk.Label(self.frame_telefonos, text="Clic en tabla para ver las opciones de edición.", bg="#f5f5f5", fg="gray").pack(pady=10)
+        tk.Label(self.frame_telefonos, text="Clic en una fila de la tabla de arriba para ver los números.", bg=COLOR_PANELES, fg="gray", font=("Segoe UI", 9, "bold")).pack(pady=5)
 
-    # NUEVAS FUNCIONES DE EDICIÓN Y ALTERNANCIA
+    # Lógica de gestión de teléfonos
     def alternar_estado_numero(self, num_formateado, es_valido_actual):
         try:
             sel = self.tree.selection()
@@ -374,7 +401,6 @@ class WoodToolsApp:
 
         except Exception as e: print("Error editando:", e)
 
-
     def al_seleccionar_cliente(self, event):
         sel = self.tree.selection()
         if not sel: return
@@ -385,16 +411,16 @@ class WoodToolsApp:
         tels_i = row.get('Telefonos_Invalidos', [])
         todos = [(t, True) for t in tels_v] + [(t, False) for t in tels_i]
         
-        if not todos: tk.Label(self.frame_telefonos, text="Sin números", fg="red", bg="#f5f5f5").pack(side="left"); return
+        if not todos: tk.Label(self.frame_telefonos, text="Sin números", fg="red", bg=COLOR_PANELES).pack(side="left"); return 
         
         for tel, es_val in todos:
             bg, fg = ("#E8F5E9", "#2E7D32") if es_val else ("#FFEBEE", "#C62828")
-            f = tk.Frame(self.frame_telefonos, bg=bg, highlightthickness=2, padx=10, pady=5)
+            f = tk.Frame(self.frame_telefonos, bg=bg, highlightthickness=2, padx=10, pady=2)
             f.pack(side="left", padx=10, fill="y")
             tk.Label(f, text=tel, font=("bold"), bg=bg, fg=fg).pack()
             
             f_btns = tk.Frame(f, bg=bg)
-            f_btns.pack(pady=(5,0))
+            f_btns.pack(pady=(2,0))
             
             lbl_accion = tk.Label(f_btns, text="✅ Quitar" if es_val else "❌ Forzar Uso", bg=bg, fg=fg, cursor="hand2", font=("Segoe UI", 9, "underline"))
             lbl_accion.pack(side="left", padx=5)
@@ -405,7 +431,7 @@ class WoodToolsApp:
             lbl_editar.bind("<Button-1>", lambda e, t=tel, v=es_val: self.editar_numero(t, v))
 
     # ==========================================
-    # SELECTOR DE BASES DINÁMICO (Google Sheets)
+    # SELECTOR DE BASES DINÁMICO
     # ==========================================
     def abrir_selector_bases(self):
         vent_selector = tk.Toplevel(self.root)
@@ -416,17 +442,14 @@ class WoodToolsApp:
         lbl_cargando = tk.Label(vent_selector, text="🔍 Buscando pestañas en tu Google Sheets...", font=("Segoe UI", 11, "italic"), bg="#f5f5f5", fg="#555")
         lbl_cargando.pack(pady=40)
 
-        # Función que corre en segundo plano para no congelar la ventana
         def fetch_sheets():
             pestanas = mainCode.obtener_pestanas_disponibles()
             self.root.after(0, lambda: construir_botones(pestanas))
 
-        # Función que dibuja los botones una vez que Sheets responde
         def construir_botones(pestanas):
             lbl_cargando.destroy()
             tk.Label(vent_selector, text="¿Qué pestaña deseas importar?", font=("Segoe UI", 12, "bold"), bg="#f5f5f5").pack(pady=15)
 
-            # Frame con Scroll por si creás muchísimas pestañas en Drive
             frame_canvas = tk.Frame(vent_selector, bg="#f5f5f5")
             frame_canvas.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -441,32 +464,28 @@ class WoodToolsApp:
             canvas.pack(side="left", fill="both", expand=True)
             scrollbar.pack(side="right", fill="y")
 
-            # Crea un botón por cada pestaña encontrada
             for p in pestanas:
                 nombre_p_lower = p.lower()
-                
-                # Inteligencia de colores según la palabra
                 if "cliente" in nombre_p_lower:
                     color = "#4CAF50"; icono = "📘"
                 elif "prospecto" in nombre_p_lower:
                     color = "#FF9800"; icono = "📙"
                 elif "descarte" in nombre_p_lower or "observado" in nombre_p_lower:
-                    color = "#F44336"; icono = "📕"
+                    color = COLOR_ROJO_WT; icono = "📕"
                 else:
-                    color = "#2196F3"; icono = "📄" # Azul por defecto
+                    color = "#2196F3"; icono = "📄" 
 
                 btn = tk.Button(scrollable_frame, text=f"{icono} Cargar: {p}", width=38, bg=color, fg="white", font=("Segoe UI", 10, "bold"), 
                                 command=lambda nombre=p: self._iniciar_carga(nombre, vent_selector))
                 btn.pack(pady=5, padx=20)
 
-        # Arrancamos el buscador
         threading.Thread(target=fetch_sheets, daemon=True).start()
 
     def _iniciar_carga(self, tipo, ventana):
         if ventana:
             ventana.destroy()
         self.tipo_base_actual = tipo
-        self.lbl_status_db.config(text=f"Descargando pestaña '{tipo}'...", fg="orange")
+        self.lbl_status_db.config(text=f"Descargando pestaña '{tipo}'...", fg="white", bg=COLOR_ROJO_WT)
         threading.Thread(target=self._hilo_carga, args=(tipo,)).start()
     
     def _hilo_carga(self, tipo):
@@ -488,10 +507,9 @@ class WoodToolsApp:
         herramientas = ["Todos"] + mainCode.identificar_cols_productos(df)
         self.root.after(0, lambda: self.combo_herramientas.config(values=herramientas))
         self.root.after(0, lambda: self.combo_herramientas.current(0))
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} registros de {tipo}", fg="green"))
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} registros de {tipo}", fg="white", bg=COLOR_ROJO_WT))
 
     def actualizar_tabla(self):
-        # Adapta los títulos de la tabla según lo que cargues
         if "prospecto" in self.tipo_base_actual.lower():
             self.tree.heading("Cli", text="Nombre del Prospecto")
             self.tree.heading("Zona", text="Herramienta de Interés")
@@ -630,7 +648,7 @@ class WoodToolsApp:
     def _proceso_envio(self, tipo, params, df):
         media_id = None
         if params.get('ruta_imagen'):
-            self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue")
+            self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue", bg=COLOR_PANELES) 
             media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
             if not media_id: 
                 self.root.after(0, lambda: self.btn_enviar.config(state="normal"))
@@ -642,7 +660,7 @@ class WoodToolsApp:
         
         for i, (_, row) in enumerate(df.iterrows()):
             if self.cancelar_envio: break
-            self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Cliente {x+1}/{tot}...", fg="blue"))
+            self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Cliente {x+1}/{tot}...", fg="blue", bg=COLOR_PANELES))
             
             if tipo == "Recotización":
                 tel_v = mainCode.DB_VENDEDORES["Emmanuel"][0]
@@ -693,10 +711,10 @@ class WoodToolsApp:
         self.root.after(0, lambda: self.btn_cancelar.config(state="disabled", text="🛑 CANCELAR ENVÍO"))
         
         if self.cancelar_envio:
-            self.root.after(0, lambda: self.lbl_progreso.config(text="Envío Cancelado", fg="red"))
+            self.root.after(0, lambda: self.lbl_progreso.config(text="Envío Cancelado", fg="red", bg=COLOR_PANELES))
             self.root.after(0, lambda: messagebox.showwarning("Proceso Detenido", f"La campaña fue frenada.\n\nEnviados con éxito: {ok}\nErrores: {err}"))
         else:
-            self.root.after(0, lambda: self.lbl_progreso.config(text="Campaña completada", fg="green"))
+            self.root.after(0, lambda: self.lbl_progreso.config(text="Campaña completada", fg="green", bg=COLOR_PANELES))
             self.root.after(0, lambda: messagebox.showinfo("Reporte Final", f"Campaña Finalizada.\n\nEnviados con éxito: {ok}\nErrores: {err}\n\nQuedó registrada en el historial como: {estado_final_tanda}"))
 
 if __name__ == "__main__":

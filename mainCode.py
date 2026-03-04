@@ -9,6 +9,7 @@ from datetime import datetime
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request # LA CLAVE PARA RENOVAR SIN AVISAR
 
 # ==========================================
 # CONFIGURACIÓN DE LA API DE WHATSAPP Y SHEETS
@@ -131,8 +132,35 @@ def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     return f"https://wa.me/{tel}?text={msg_codificado}"
 
 # ==========================================
-# LECTOR DESDE GOOGLE SHEETS "INTELIGENTE"
+# LECTOR DESDE GOOGLE SHEETS Y RENOVACIÓN DE TOKEN
 # ==========================================
+def obtener_credenciales():
+    creds = None
+    if os.path.exists(ARCHIVO_TOKEN):
+        creds = Credentials.from_authorized_user_file(ARCHIVO_TOKEN, SCOPES)
+        
+    if not creds or not creds.valid:
+        # AQUÍ ESTÁ LA MAGIA PARA QUE NO TE PIDA INICIAR SESIÓN OTRA VEZ
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"Error renovando token en silencio: {e}")
+                creds = None
+                
+        # Solo entra acá si de verdad borraste el token
+        if not creds or not creds.valid:
+            ruta_creds = obtener_ruta_recurso("credenciales.json")
+            if not os.path.exists(ruta_creds):
+                return None
+            flow = InstalledAppFlow.from_client_secrets_file(ruta_creds, SCOPES)
+            creds = flow.run_local_server(port=0)
+            
+        with open(ARCHIVO_TOKEN, 'w') as token:
+            token.write(creds.to_json())
+            
+    return creds
+
 def aplicar_correcciones_texto(texto):
     t = str(texto).strip()
     t = re.sub(r'(?i)0a', '0-A', t)
@@ -141,11 +169,8 @@ def aplicar_correcciones_texto(texto):
 
 def obtener_pestanas_disponibles():
     try:
-        creds = None
-        if os.path.exists(ARCHIVO_TOKEN):
-            creds = Credentials.from_authorized_user_file(ARCHIVO_TOKEN, SCOPES)
-        if not creds or not creds.valid:
-            return ["Base de datos wt"]
+        creds = obtener_credenciales()
+        if not creds: return ["Base de datos wt"]
 
         gc = gspread.authorize(creds)
         sh = gc.open(NOMBRE_HOJA)
@@ -156,23 +181,12 @@ def obtener_pestanas_disponibles():
 
 def leer_desde_google_sheets(nombre_pestana=""):
     try:
-        creds = None
-        if os.path.exists(ARCHIVO_TOKEN):
-            creds = Credentials.from_authorized_user_file(ARCHIVO_TOKEN, SCOPES)
-            
-        if not creds or not creds.valid:
-            ruta_creds = obtener_ruta_recurso("credenciales.json")
-            if not os.path.exists(ruta_creds):
-                return []
-            flow = InstalledAppFlow.from_client_secrets_file(ruta_creds, SCOPES)
-            creds = flow.run_local_server(port=0)
-            with open(ARCHIVO_TOKEN, 'w') as token:
-                token.write(creds.to_json())
+        creds = obtener_credenciales()
+        if not creds: return []
 
         gc = gspread.authorize(creds)
         sh = gc.open(NOMBRE_HOJA)
         
-        # Selecciona la pestaña que indique la interfaz, si no, usa la Hoja 1
         if nombre_pestana and nombre_pestana.lower() not in ["clientes", "prospectos"]:
             try:
                 ws = sh.worksheet(nombre_pestana)
@@ -187,7 +201,6 @@ def leer_desde_google_sheets(nombre_pestana=""):
         headers_brutos = datos_brutos[0] 
         headers = [h.strip() if h.strip() != "" else f"Col_Vacia_{i}" for i, h in enumerate(headers_brutos)]
         
-        # DETECCIÓN AUTOMÁTICA DE FORMATO
         es_formato_complejo = 'Primer número' in headers
 
         if es_formato_complejo:
@@ -206,7 +219,6 @@ def leer_desde_google_sheets(nombre_pestana=""):
                 for col in ['Primer número', 'Segundo número', 'Tercer número', 'Cuarto número', 'Quinto número']:
                     if col in row and str(row[col]).strip():
                         val_str = str(row[col]).strip()
-                        # Corrección: Sacar espacios y guiones antes de procesar
                         val_str_limpio = val_str.replace(" ", "").replace("-", "")
                         val_num = ''.join(filter(str.isdigit, val_str_limpio))
                         if not val_num.startswith("000") and val_num:
@@ -214,11 +226,9 @@ def leer_desde_google_sheets(nombre_pestana=""):
                 
                 cliente_nom = str(row.get('Nombre', 'Cliente Sin Nombre')).strip() or "Cliente Sin Nombre"
             else:
-                # Busca las columnas típicas de una base de prospectos simple
                 col_tel = 'Numero de Telefono' if 'Numero de Telefono' in row else ('Número' if 'Número' in row else ('Teléfono' if 'Teléfono' in row else None))
                 if col_tel and col_tel in row:
                     num_raw = str(row[col_tel]).strip()
-                    # Corrección: Sacar espacios y guiones
                     num_raw_limpio = num_raw.replace(" ", "").replace("-", "")
                     num_only = ''.join(filter(str.isdigit, num_raw_limpio))
                     if not num_only.startswith("000") and num_only:
@@ -226,7 +236,6 @@ def leer_desde_google_sheets(nombre_pestana=""):
                 
                 cliente_nom = str(row.get('Cliente', row.get('Nombres', row.get('Nombre', 'Sin Nombre')))).strip() or "Sin Nombre"
             
-            # Corrección aplicada a campos que pueden contener 0a / 0b
             zona_corregida = aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0')))
             num_cli_corregido = aplicar_correcciones_texto(row.get('Número de cliente', ''))
             
@@ -249,7 +258,6 @@ def leer_desde_google_sheets(nombre_pestana=""):
 # LÓGICA DE DETECCIÓN DE TELÉFONOS
 # ==========================================
 def formatear_telefono(numero_raw):
-    # Corrección: Aseguramos limpieza estricta de espacios y guiones
     num_str = str(numero_raw).replace(" ", "").replace("-", "")
     num_str = ''.join(filter(str.isdigit, num_str))
     
