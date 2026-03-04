@@ -7,6 +7,8 @@ import sqlite3
 import re
 from datetime import datetime
 import gspread
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
 
 # ==========================================
 # CONFIGURACIÓN DE LA API DE WHATSAPP Y SHEETS
@@ -16,25 +18,27 @@ PHONE_NUMBER_ID = "1007885345737939"
 VERSION = "v17.0"
 BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 
-JSON_CREDS = 'service_account.json' 
 NOMBRE_HOJA = "Base de datos wt"
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.readonly']
 
 # ==========================================
 # LÓGICA DE RUTAS Y BASE DE DATOS LOCAL
 # ==========================================
 def obtener_ruta_recurso(ruta_relativa):
     if getattr(sys, 'frozen', False):
-        ruta_base = os.path.dirname(sys.executable)
-        return os.path.join(ruta_base, ruta_relativa)
+        ruta_base = sys._MEIPASS
     else:
         ruta_base = os.path.dirname(os.path.abspath(__file__))
-        ruta_directa = os.path.join(ruta_base, ruta_relativa)
-        ruta_dist = os.path.join(ruta_base, "dist", ruta_relativa)
-        if not os.path.exists(ruta_directa) and os.path.exists(ruta_dist):
-            return ruta_dist
-        return ruta_directa
+    return os.path.join(ruta_base, ruta_relativa)
 
-ARCHIVO_DB = obtener_ruta_recurso("historial_campanas.db") 
+def obtener_ruta_persistente(nombre_archivo):
+    if getattr(sys, 'frozen', False):
+        return os.path.join(os.path.dirname(sys.executable), nombre_archivo)
+    else:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), nombre_archivo)
+
+ARCHIVO_DB = obtener_ruta_persistente("historial_campanas.db") 
+ARCHIVO_TOKEN = obtener_ruta_persistente("token.json")
 
 def inicializar_db():
     try:
@@ -107,7 +111,7 @@ def obtener_datos_reporte_por_tandas(tandas_seleccionadas):
     except Exception as e: return pd.DataFrame()
 
 # ==========================================
-# PLANTILLAS Y VENDEDORES (SOLO CARLOS, VALENTÍN, EMMANUEL)
+# PLANTILLAS Y VENDEDORES
 # ==========================================
 PLANTILLA_PROMOS = "oferta_top_3"
 PLANTILLA_RESCATE = "reactivacion_cliente"
@@ -119,12 +123,9 @@ LISTA_OBSERVADOS = []
 
 def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
     codigo = str(codigo_excel).strip()
-    if codigo == "0": 
-        return "5491145394279" if indice_preferencia == 0 else "5491165630406"
-    elif codigo in ["1", "302", "1/302"]: 
-        return "5491157528428"
-    else: 
-        return "5491145394279"
+    if codigo == "0": return "5491145394279" if indice_preferencia == 0 else "5491165630406"
+    elif codigo in ["1", "302", "1/302"]: return "5491157528428"
+    else: return "5491145394279"
 
 def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     if tipo_mensaje == "Promociones": texto = "Hola, vi las promociones por WhatsApp y busco el [CÓDIGO] de [TIPO DE PRODUCTO] para mi máquina."
@@ -141,47 +142,49 @@ def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     return f"https://wa.me/{tel}?text={msg_codificado}"
 
 # ==========================================
-# LECTOR DESDE GOOGLE SHEETS CON ESCUDO ANTI-CEROS
+# LECTOR DESDE GOOGLE SHEETS (VÍA OAUTH)
 # ==========================================
 def leer_desde_google_sheets(tipo_base):
     try:
-        ruta_creds = obtener_ruta_recurso(JSON_CREDS)
-        if not os.path.exists(ruta_creds):
-            print(f"ERROR: No se encontró el archivo de credenciales: {ruta_creds}")
-            return []
+        creds = None
+        if os.path.exists(ARCHIVO_TOKEN):
+            creds = Credentials.from_authorized_user_file(ARCHIVO_TOKEN, SCOPES)
+            
+        if not creds or not creds.valid:
+            ruta_creds = obtener_ruta_recurso("credenciales.json")
+            if not os.path.exists(ruta_creds):
+                print(f"ERROR: No se encontró el archivo {ruta_creds}.")
+                return []
+                
+            flow = InstalledAppFlow.from_client_secrets_file(ruta_creds, SCOPES)
+            creds = flow.run_local_server(port=0)
+            
+            with open(ARCHIVO_TOKEN, 'w') as token:
+                token.write(creds.to_json())
 
-        gc = gspread.service_account(filename=ruta_creds)
+        gc = gspread.authorize(creds)
         sh = gc.open(NOMBRE_HOJA)
         
         datos_brutos = sh.sheet1.get_all_values()
-        if len(datos_brutos) < 2: 
-            return []
+        if len(datos_brutos) < 3: 
+            return [] # Necesita tener al menos los títulos y los datos
             
-        headers = datos_brutos[1] 
+        # Extraer los títulos reales de la Fila 1 (Índice 0)
+        headers_brutos = datos_brutos[0] 
+        # Rellenar nombres de columnas vacías para que Pandas no explote
+        headers = [h.strip() if h.strip() != "" else f"Columna_Vacia_{i}" for i, h in enumerate(headers_brutos)]
+        
+        # Extraer los datos reales desde la Fila 3 en adelante (Índice 2, salteando la fila de "nombre fantasia")
         data = datos_brutos[2:]
+        
         df = pd.DataFrame(data, columns=headers)
-        
         df = df.fillna("")
-        registros = []
         
-        if tipo_base == "prospectos":
-            for _, row in df.iterrows():
-                num_raw = str(row.get('Número', row.get('Primer número', ''))).strip()
-                num_only = ''.join(filter(str.isdigit, num_raw))
-                tels = [] if num_only.startswith("000") else ([num_raw] if num_raw else [])
-                    
-                cliente_dict = {
-                    'Cliente': str(row.get('Nombres', row.get('Nombre', 'Sin Nombre'))).strip(), 
-                    'Telefonos_Raw': tels, 
-                    'Vendedor': str(row.get('Vendedor', '5001')).strip(), 
-                    'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip(), 
-                    'Zona': str(row.get('Producto por el que consultó', '')).strip()
-                }
-                registros.append(cliente_dict)
-            return registros
+        registros = []
 
         for _, row in df.iterrows():
             tels_raw = []
+            # Buscar en las 5 columnas de números
             for col in ['Primer número', 'Segundo número', 'Tercer número', 'Cuarto número', 'Quinto número']:
                 if col in row and str(row[col]).strip():
                     val_str = str(row[col]).strip()
@@ -200,7 +203,7 @@ def leer_desde_google_sheets(tipo_base):
             
         return registros
     except Exception as e: 
-        print(f"Error leyendo desde Google Sheets: {e}")
+        print(f"Error crítico conectando a Google Sheets: {e}")
         return []
 
 # ==========================================
@@ -209,37 +212,29 @@ def leer_desde_google_sheets(tipo_base):
 def formatear_telefono(numero_raw):
     num_str = ''.join(filter(str.isdigit, str(numero_raw)))
     if not num_str: return ""
-
     if num_str.startswith("549") and len(num_str) == 13: return num_str
     if num_str.startswith("54") and len(num_str) == 12: return "549" + num_str[2:]
-
     if num_str.startswith("549"): num_str = num_str[3:]
     elif num_str.startswith("54"): num_str = num_str[2:]
-
     if num_str.startswith("0"): num_str = num_str[1:]
-
     match_15 = re.match(r'^([1-3]\d{1,3})15(\d{6,8})$', num_str)
     if match_15:
         area = match_15.group(1); resto = match_15.group(2)
         if len(area) + len(resto) == 10: return f"549{area}{resto}"
-
     if num_str.startswith("15") and len(num_str) == 10: return f"54911{num_str[2:]}"
     if len(num_str) == 8 and num_str[0] in "234567": return f"54911{num_str}"
     if len(num_str) == 10: return f"549{num_str}"
-
     return num_str
 
 def validar_formato_numero(numero_raw):
     numero_fmt = formatear_telefono(numero_raw)
     if not numero_fmt: return False, ""
-    
     if re.match(r'^549\d{10}$', numero_fmt): return True, numero_fmt
     return False, numero_fmt
 
 def conectar_y_procesar(tipo_base):
     global LISTA_OBSERVADOS
     LISTA_OBSERVADOS = [] 
-    
     datos = leer_desde_google_sheets(tipo_base)
     data_procesada = []
     
