@@ -108,7 +108,6 @@ class WoodToolsApp:
         self.combo_tipo_mensaje.bind("<<ComboboxSelected>>", self.actualizar_inputs_dinamicos)
 
         tk.Label(frame_campana, text="Enviar como:", bg="#f5f5f5").grid(row=0, column=1, sticky="w", padx=20)
-        # Cargamos los nombres de los vendedores directamente desde el backend
         opciones_vendedores = ["AUTOMÁTICO (Según Planilla)"] + list(mainCode.DB_VENDEDORES.keys())
         self.combo_vendedor = ttk.Combobox(frame_campana, values=opciones_vendedores, state="readonly", width=30)
         self.combo_vendedor.grid(row=1, column=1, padx=20, pady=5, sticky="n")
@@ -330,16 +329,13 @@ class WoodToolsApp:
             idx = int(sel[0])
             row = self.df_filtrado.loc[idx]
             
-            # Pedir el número nuevo al usuario
             nuevo_num = simpledialog.askstring("Editar Número", f"Corrigiendo el número de {row['Cliente']}:\n\nReemplazar {num_antiguo} por:", initialvalue=num_antiguo)
             
-            if not nuevo_num or nuevo_num.strip() == num_antiguo: return # Canceló o lo dejó igual
+            if not nuevo_num or nuevo_num.strip() == num_antiguo: return
             nuevo_num = nuevo_num.strip()
             
-            # Validamos el nuevo número con las reglas de Meta y Argentina
             es_nuevo_valido, nuevo_fmt = mainCode.validar_formato_numero(nuevo_num)
             
-            # Sacamos el viejo de las listas
             if es_valido_actual and num_antiguo in row['Telefonos_Validos']:
                 row['Telefonos_Validos'].remove(num_antiguo)
             elif not es_valido_actual and num_antiguo in row['Telefonos_Invalidos']:
@@ -349,7 +345,6 @@ class WoodToolsApp:
                 row['Telefonos_Raw'].remove(num_antiguo)
             row['Telefonos_Raw'].append(nuevo_num)
             
-            # Metemos el nuevo en la lista correspondiente
             if es_nuevo_valido:
                 if nuevo_fmt not in row['Telefonos_Validos']:
                     row['Telefonos_Validos'].append(nuevo_fmt)
@@ -357,7 +352,6 @@ class WoodToolsApp:
                 if nuevo_num not in row['Telefonos_Invalidos']:
                     row['Telefonos_Invalidos'].append(nuevo_num)
                     
-            # Recalculamos el estado global de la fila
             row['Es_Valido'] = len(row['Telefonos_Validos']) > 0
             if row['Telefonos_Validos']: 
                 row['Tel_Formateado'] = " | ".join(row['Telefonos_Validos'])
@@ -373,7 +367,6 @@ class WoodToolsApp:
             self.tree.selection_set(idx)
             self.al_seleccionar_cliente(None)
             
-            # Mensaje de retroalimentación
             if es_nuevo_valido:
                 messagebox.showinfo("Número Aceptado", f"El número se corrigió y se validó como: {nuevo_fmt}\n\nQuedó listo para enviar.")
             else:
@@ -400,53 +393,90 @@ class WoodToolsApp:
             f.pack(side="left", padx=10, fill="y")
             tk.Label(f, text=tel, font=("bold"), bg=bg, fg=fg).pack()
             
-            # Contenedor para alinear los botones en horizontal
             f_btns = tk.Frame(f, bg=bg)
             f_btns.pack(pady=(5,0))
             
-            # Botón Alternar
             lbl_accion = tk.Label(f_btns, text="✅ Quitar" if es_val else "❌ Forzar Uso", bg=bg, fg=fg, cursor="hand2", font=("Segoe UI", 9, "underline"))
             lbl_accion.pack(side="left", padx=5)
             lbl_accion.bind("<Button-1>", lambda e, t=tel, v=es_val: self.alternar_estado_numero(t, v))
             
-            # Botón Editar
             lbl_editar = tk.Label(f_btns, text="✏️ Editar", bg=bg, fg="#1976D2", cursor="hand2", font=("Segoe UI", 9, "underline"))
             lbl_editar.pack(side="left", padx=5)
             lbl_editar.bind("<Button-1>", lambda e, t=tel, v=es_val: self.editar_numero(t, v))
 
     # ==========================================
-    # SELECTOR DE BASES (Adaptado a Google Sheets)
+    # SELECTOR DE BASES DINÁMICO (Google Sheets)
     # ==========================================
     def abrir_selector_bases(self):
         vent_selector = tk.Toplevel(self.root)
         vent_selector.title("Selector de Bases de Datos")
-        vent_selector.geometry("450x200")
+        vent_selector.geometry("480x350")
         vent_selector.configure(bg="#f5f5f5")
         
-        tk.Label(vent_selector, text="¿Qué base deseas importar desde Google Sheets?", font=("Segoe UI", 11, "bold"), bg="#f5f5f5").pack(pady=20)
-        
-        btn_clientes = tk.Button(vent_selector, text="📘 Cargar Base de Clientes", width=40, bg="#4CAF50", fg="white", font=("bold"), 
-                                 command=lambda: self._iniciar_carga("clientes", vent_selector))
-        btn_clientes.pack(pady=5)
-        
-        btn_prospectos = tk.Button(vent_selector, text="📙 Cargar Base de Prospectos", width=40, bg="#FF9800", fg="white", font=("bold"), 
-                                   command=lambda: self._iniciar_carga("prospectos", vent_selector)) 
-        btn_prospectos.pack(pady=5)
+        lbl_cargando = tk.Label(vent_selector, text="🔍 Buscando pestañas en tu Google Sheets...", font=("Segoe UI", 11, "italic"), bg="#f5f5f5", fg="#555")
+        lbl_cargando.pack(pady=40)
+
+        # Función que corre en segundo plano para no congelar la ventana
+        def fetch_sheets():
+            pestanas = mainCode.obtener_pestanas_disponibles()
+            self.root.after(0, lambda: construir_botones(pestanas))
+
+        # Función que dibuja los botones una vez que Sheets responde
+        def construir_botones(pestanas):
+            lbl_cargando.destroy()
+            tk.Label(vent_selector, text="¿Qué pestaña deseas importar?", font=("Segoe UI", 12, "bold"), bg="#f5f5f5").pack(pady=15)
+
+            # Frame con Scroll por si creás muchísimas pestañas en Drive
+            frame_canvas = tk.Frame(vent_selector, bg="#f5f5f5")
+            frame_canvas.pack(fill="both", expand=True, padx=10, pady=5)
+
+            canvas = tk.Canvas(frame_canvas, bg="#f5f5f5", highlightthickness=0)
+            scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
+            scrollable_frame = tk.Frame(canvas, bg="#f5f5f5")
+
+            scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            # Crea un botón por cada pestaña encontrada
+            for p in pestanas:
+                nombre_p_lower = p.lower()
+                
+                # Inteligencia de colores según la palabra
+                if "cliente" in nombre_p_lower:
+                    color = "#4CAF50"; icono = "📘"
+                elif "prospecto" in nombre_p_lower:
+                    color = "#FF9800"; icono = "📙"
+                elif "descarte" in nombre_p_lower or "observado" in nombre_p_lower:
+                    color = "#F44336"; icono = "📕"
+                else:
+                    color = "#2196F3"; icono = "📄" # Azul por defecto
+
+                btn = tk.Button(scrollable_frame, text=f"{icono} Cargar: {p}", width=38, bg=color, fg="white", font=("Segoe UI", 10, "bold"), 
+                                command=lambda nombre=p: self._iniciar_carga(nombre, vent_selector))
+                btn.pack(pady=5, padx=20)
+
+        # Arrancamos el buscador
+        threading.Thread(target=fetch_sheets, daemon=True).start()
 
     def _iniciar_carga(self, tipo, ventana):
         if ventana:
             ventana.destroy()
         self.tipo_base_actual = tipo
-        self.lbl_status_db.config(text="Conectando con Google Sheets...", fg="orange")
+        self.lbl_status_db.config(text=f"Descargando pestaña '{tipo}'...", fg="orange")
         threading.Thread(target=self._hilo_carga, args=(tipo,)).start()
     
     def _hilo_carga(self, tipo):
         df = mainCode.conectar_y_procesar(tipo)
         if df.empty: 
-            return self.root.after(0, lambda: messagebox.showerror("Error", "Base vacía o no se pudo leer la planilla. Verificá tu conexión a internet y el archivo credenciales.json."))
+            return self.root.after(0, lambda: messagebox.showerror("Error", "Base vacía o no se pudo leer la planilla. Asegurate de que tenga el formato correcto."))
             
         for c in ['Zona', 'Vendedor']: df[c] = df[c].fillna("0").astype(str)
-        if tipo == "clientes":
+        
+        if "prospecto" not in tipo.lower():
             df['Fav_Temp'] = "Sierras"; df['Sec_Temp'] = "Cuchillas"
         
         self.df_original = df; self.df_filtrado = df.copy()
@@ -458,10 +488,11 @@ class WoodToolsApp:
         herramientas = ["Todos"] + mainCode.identificar_cols_productos(df)
         self.root.after(0, lambda: self.combo_herramientas.config(values=herramientas))
         self.root.after(0, lambda: self.combo_herramientas.current(0))
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} registros de la Nube", fg="green"))
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} registros de {tipo}", fg="green"))
 
     def actualizar_tabla(self):
-        if self.tipo_base_actual == "prospectos":
+        # Adapta los títulos de la tabla según lo que cargues
+        if "prospecto" in self.tipo_base_actual.lower():
             self.tree.heading("Cli", text="Nombre del Prospecto")
             self.tree.heading("Zona", text="Herramienta de Interés")
         else:

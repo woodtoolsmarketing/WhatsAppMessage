@@ -99,17 +99,6 @@ def obtener_tandas_campanas():
         return df.to_dict('records')
     except Exception as e: return []
 
-def obtener_datos_reporte_por_tandas(tandas_seleccionadas):
-    try:
-        if not tandas_seleccionadas: return pd.DataFrame()
-        conn = sqlite3.connect(ARCHIVO_DB)
-        placeholders = ','.join(['?'] * len(tandas_seleccionadas))
-        query = f"SELECT * FROM historial WHERE tanda_id IN ({placeholders}) ORDER BY id ASC"
-        df = pd.read_sql_query(query, conn, params=tandas_seleccionadas)
-        conn.close()
-        return df
-    except Exception as e: return pd.DataFrame()
-
 # ==========================================
 # PLANTILLAS Y VENDEDORES
 # ==========================================
@@ -142,9 +131,30 @@ def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     return f"https://wa.me/{tel}?text={msg_codificado}"
 
 # ==========================================
-# LECTOR DESDE GOOGLE SHEETS (VÍA OAUTH)
+# LECTOR DESDE GOOGLE SHEETS "INTELIGENTE"
 # ==========================================
-def leer_desde_google_sheets(tipo_base):
+def aplicar_correcciones_texto(texto):
+    t = str(texto).strip()
+    t = re.sub(r'(?i)0a', '0-A', t)
+    t = re.sub(r'(?i)0b', '0-B', t)
+    return t
+
+def obtener_pestanas_disponibles():
+    try:
+        creds = None
+        if os.path.exists(ARCHIVO_TOKEN):
+            creds = Credentials.from_authorized_user_file(ARCHIVO_TOKEN, SCOPES)
+        if not creds or not creds.valid:
+            return ["Base de datos wt"]
+
+        gc = gspread.authorize(creds)
+        sh = gc.open(NOMBRE_HOJA)
+        return [ws.title for ws in sh.worksheets()]
+    except Exception as e:
+        print(f"Error obteniendo pestañas: {e}")
+        return ["Hoja 1"]
+
+def leer_desde_google_sheets(nombre_pestana=""):
     try:
         creds = None
         if os.path.exists(ARCHIVO_TOKEN):
@@ -153,77 +163,112 @@ def leer_desde_google_sheets(tipo_base):
         if not creds or not creds.valid:
             ruta_creds = obtener_ruta_recurso("credenciales.json")
             if not os.path.exists(ruta_creds):
-                print(f"ERROR: No se encontró el archivo {ruta_creds}.")
                 return []
-                
             flow = InstalledAppFlow.from_client_secrets_file(ruta_creds, SCOPES)
             creds = flow.run_local_server(port=0)
-            
             with open(ARCHIVO_TOKEN, 'w') as token:
                 token.write(creds.to_json())
 
         gc = gspread.authorize(creds)
         sh = gc.open(NOMBRE_HOJA)
         
-        datos_brutos = sh.sheet1.get_all_values()
-        if len(datos_brutos) < 3: 
-            return [] # Necesita tener al menos los títulos y los datos
-            
-        # Extraer los títulos reales de la Fila 1 (Índice 0)
-        headers_brutos = datos_brutos[0] 
-        # Rellenar nombres de columnas vacías para que Pandas no explote
-        headers = [h.strip() if h.strip() != "" else f"Columna_Vacia_{i}" for i, h in enumerate(headers_brutos)]
+        # Selecciona la pestaña que indique la interfaz, si no, usa la Hoja 1
+        if nombre_pestana and nombre_pestana.lower() not in ["clientes", "prospectos"]:
+            try:
+                ws = sh.worksheet(nombre_pestana)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = sh.sheet1
+        else:
+            ws = sh.sheet1 
         
-        # Extraer los datos reales desde la Fila 3 en adelante (Índice 2, salteando la fila de "nombre fantasia")
-        data = datos_brutos[2:]
+        datos_brutos = ws.get_all_values()
+        if len(datos_brutos) < 2: return []
+            
+        headers_brutos = datos_brutos[0] 
+        headers = [h.strip() if h.strip() != "" else f"Col_Vacia_{i}" for i, h in enumerate(headers_brutos)]
+        
+        # DETECCIÓN AUTOMÁTICA DE FORMATO
+        es_formato_complejo = 'Primer número' in headers
+
+        if es_formato_complejo:
+            data = datos_brutos[2:] if len(datos_brutos) > 2 else []
+        else:
+            data = datos_brutos[1:] if len(datos_brutos) > 1 else []
         
         df = pd.DataFrame(data, columns=headers)
         df = df.fillna("")
-        
         registros = []
-
+        
         for _, row in df.iterrows():
             tels_raw = []
-            # Buscar en las 5 columnas de números
-            for col in ['Primer número', 'Segundo número', 'Tercer número', 'Cuarto número', 'Quinto número']:
-                if col in row and str(row[col]).strip():
-                    val_str = str(row[col]).strip()
-                    val_num = ''.join(filter(str.isdigit, val_str))
-                    if not val_num.startswith("000"):
-                        tels_raw.append(val_str)
+            
+            if es_formato_complejo:
+                for col in ['Primer número', 'Segundo número', 'Tercer número', 'Cuarto número', 'Quinto número']:
+                    if col in row and str(row[col]).strip():
+                        val_str = str(row[col]).strip()
+                        # Corrección: Sacar espacios y guiones antes de procesar
+                        val_str_limpio = val_str.replace(" ", "").replace("-", "")
+                        val_num = ''.join(filter(str.isdigit, val_str_limpio))
+                        if not val_num.startswith("000") and val_num:
+                            tels_raw.append(val_str_limpio)
+                
+                cliente_nom = str(row.get('Nombre', 'Cliente Sin Nombre')).strip() or "Cliente Sin Nombre"
+            else:
+                # Busca las columnas típicas de una base de prospectos simple
+                col_tel = 'Numero de Telefono' if 'Numero de Telefono' in row else ('Número' if 'Número' in row else ('Teléfono' if 'Teléfono' in row else None))
+                if col_tel and col_tel in row:
+                    num_raw = str(row[col_tel]).strip()
+                    # Corrección: Sacar espacios y guiones
+                    num_raw_limpio = num_raw.replace(" ", "").replace("-", "")
+                    num_only = ''.join(filter(str.isdigit, num_raw_limpio))
+                    if not num_only.startswith("000") and num_only:
+                        tels_raw.append(num_raw_limpio)
+                
+                cliente_nom = str(row.get('Cliente', row.get('Nombres', row.get('Nombre', 'Sin Nombre')))).strip() or "Sin Nombre"
+            
+            # Corrección aplicada a campos que pueden contener 0a / 0b
+            zona_corregida = aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0')))
+            num_cli_corregido = aplicar_correcciones_texto(row.get('Número de cliente', ''))
             
             cliente_dict = {
-                'Número de cliente': str(row.get('Número de cliente', '')).strip(),
-                'Cliente': str(row.get('Nombre', 'Cliente Sin Nombre')).strip() or "Cliente Sin Nombre",
-                'Zona': str(row.get('Zona del cliente', '0')).strip() or '0',
+                'Número de cliente': num_cli_corregido,
+                'Cliente': cliente_nom,
+                'Zona': zona_corregida or '0',
                 'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
-                'Telefonos_Raw': tels_raw
+                'Telefonos_Raw': tels_raw,
+                'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip()
             }
             registros.append(cliente_dict)
             
         return registros
     except Exception as e: 
-        print(f"Error crítico conectando a Google Sheets: {e}")
+        print(f"Error conectando a Sheets: {e}")
         return []
 
 # ==========================================
-# LÓGICA DE DETECCIÓN: "INTELIGENCIA ARGENTINA" 🇦🇷
+# LÓGICA DE DETECCIÓN DE TELÉFONOS
 # ==========================================
 def formatear_telefono(numero_raw):
-    num_str = ''.join(filter(str.isdigit, str(numero_raw)))
+    # Corrección: Aseguramos limpieza estricta de espacios y guiones
+    num_str = str(numero_raw).replace(" ", "").replace("-", "")
+    num_str = ''.join(filter(str.isdigit, num_str))
+    
     if not num_str: return ""
     if num_str.startswith("549") and len(num_str) == 13: return num_str
     if num_str.startswith("54") and len(num_str) == 12: return "549" + num_str[2:]
     if num_str.startswith("549"): num_str = num_str[3:]
     elif num_str.startswith("54"): num_str = num_str[2:]
     if num_str.startswith("0"): num_str = num_str[1:]
+    
     match_15 = re.match(r'^([1-3]\d{1,3})15(\d{6,8})$', num_str)
     if match_15:
         area = match_15.group(1); resto = match_15.group(2)
         if len(area) + len(resto) == 10: return f"549{area}{resto}"
+        
     if num_str.startswith("15") and len(num_str) == 10: return f"54911{num_str[2:]}"
     if len(num_str) == 8 and num_str[0] in "234567": return f"54911{num_str}"
     if len(num_str) == 10: return f"549{num_str}"
+    
     return num_str
 
 def validar_formato_numero(numero_raw):
@@ -232,10 +277,10 @@ def validar_formato_numero(numero_raw):
     if re.match(r'^549\d{10}$', numero_fmt): return True, numero_fmt
     return False, numero_fmt
 
-def conectar_y_procesar(tipo_base):
+def conectar_y_procesar(nombre_pestana=""):
     global LISTA_OBSERVADOS
     LISTA_OBSERVADOS = [] 
-    datos = leer_desde_google_sheets(tipo_base)
+    datos = leer_desde_google_sheets(nombre_pestana)
     data_procesada = []
     
     for registro in datos:
