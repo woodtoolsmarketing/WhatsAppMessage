@@ -13,7 +13,7 @@ from datetime import datetime
 # --- IMPORTAMOS TU BACKEND (Google Sheets) ---
 import mainCode 
 
-# Definición del color corporativo oficial de WoodTools para el fondo principal
+# Definición del color corporativo oficial de WoodTools
 COLOR_ROJO_WT = "#a41e22" 
 COLOR_PANELES = "#f5f5f5"
 
@@ -30,12 +30,10 @@ class WoodToolsApp:
         self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM")
         self.root.geometry("1500x900") 
         
-        # ¡ESTA ES LA LÍNEA MÁGICA PARA ABRIR EN PANTALLA COMPLETA!
+        # PANTALLA COMPLETA AL INICIAR
         self.root.state('zoomed') 
         
-        # Seteamos el fondo de la ventana principal al Rojo WoodTools
         self.root.configure(bg=COLOR_ROJO_WT) 
-        
         self.cancelar_envio = False
         self.tipo_base_actual = "clientes" 
         
@@ -61,7 +59,7 @@ class WoodToolsApp:
         self.ruta_imagen_seleccionada = None
         
         # ==========================================
-        # 1. CABECERA (Fondo Rojo WoodTools)
+        # 1. CABECERA (Márgenes ajustados)
         # ==========================================
         frame_top = tk.Frame(root, pady=5, padx=10, bg=COLOR_ROJO_WT)
         frame_top.pack(fill="x")
@@ -80,7 +78,7 @@ class WoodToolsApp:
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
         # ==========================================
-        # 2. ÁREA DE FILTROS (Panel Gris)
+        # 2. ÁREA DE FILTROS (Más compacto)
         # ==========================================
         frame_filtros = tk.LabelFrame(root, text="Filtros", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")) 
         frame_filtros.pack(fill="x", padx=20, pady=2)
@@ -174,12 +172,10 @@ class WoodToolsApp:
         self.btn_cancelar = tk.Button(frame_botones_accion, text="🛑 CANCELAR ENVÍO", command=self.comando_cancelar_envio, bg=COLOR_ROJO_WT, fg="white", font=("Segoe UI", 12, "bold"), width=20, state="disabled")
         self.btn_cancelar.grid(row=0, column=1, padx=15)
 
-        # Ahora los teléfonos están arriba de los controles pero con buen espacio
         self.frame_telefonos = tk.LabelFrame(root, text="🔍 Gestión de Teléfonos (Clic en la fila superior para ver)", padx=5, pady=5, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
         self.frame_telefonos.pack(fill="x", padx=20, pady=2, side="bottom")
         self._limpiar_panel_telefonos()
 
-        # Al reducir todo lo de arriba, la tabla AHORA sí tiene espacio libre
         frame_tabla = tk.Frame(root, bg=COLOR_ROJO_WT)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=2)
         self.tree = ttk.Treeview(frame_tabla, columns=("Cli", "Tel", "Vend", "Zona", "Est"), show="headings")
@@ -242,29 +238,27 @@ class WoodToolsApp:
         if tipo == "Promociones":
             desc = self.entry_dinamico_texto.get().strip()
             if not desc: desc = "[%]"
-            preview = f"Hola, {nombre_ej}, al ver tu interés en nuestros productos te ofrecemos un {desc}% de descuento para tus próximas compras. Si te interesa hablanos al 👉 [Link de WhatsApp]"
+            preview = f"Hola {nombre_ej}, al ver tu interés en nuestros productos te ofrecemos un {desc} % de descuento para tus próximas compras. Si te interesa hablanos al 👉 [Link de WhatsApp] ¡Te esperamos!"
         elif tipo == "Rescate (Te extrañamos)":
-            preview = f"¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej}.\n\nEntrá a este link para más información 👉 [Link de WhatsApp]"
+            preview = f"¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej} para tu taller.\n\nEntrá a este link para más información 👉 [Link de WhatsApp] ¡Saludos!"
         elif tipo == "Gira Vendedor":
             vend = self.entry_dinamico_texto.get().strip()
             if not vend: vend = "[Nombre Vendedor]"
-            preview = f"¡Hola {nombre_ej}! Te avisamos que {vend} estará visitando clientes por tu zona.\n\nEntrá a este link para coordinar la visita 👉 [Link de WhatsApp]"
+            preview = f"¡Hola! Te avisamos que {vend} estará visitando clientes por tu zona. Te escribimos porque sabemos de tu interés en {herramienta_ej} y tenemos nuevas ofertas en stock.\n\nEntrá a este link para coordinar la visita 👉 [Link de WhatsApp] ¡Nos vemos!"
         elif tipo == "Novedades":
             her = self.combo_novedad_herramienta.get()
             if not her: her = "[Herramienta]"
             if self.combo_novedad_subtipo.get() == "Ingresos":
-                preview = f"Hola, tenemos nuevas incorporaciones de {her}. Si querés más información entrá a este link: [Link de WhatsApp]"
+                preview = f"¡Hola! Te informamos que tenemos novedades de {her} en nuestro catálogo. Acaban de ingresar nuevos modelos.\n\nEntrá a este link para conocer más detalles 👉 [Link de WhatsApp] ¡Saludos!"
             else:
-                preview = f"Hola, te informamos que pudimos obtener nuevamente stock de {her}. Para conocer cuáles son los modelos entrá a este link: [Link de WhatsApp]"
+                preview = f"¡Hola! Te informamos que tenemos novedades de {her} en nuestro catálogo. Pudimos reponer el stock que esperabas.\n\nEntrá a este link para conocer más detalles 👉 [Link de WhatsApp] ¡Saludos!"
         elif tipo == "Recotización":
-            preview = f"¡Hola {nombre_ej}! Vimos que en un pasado estuviste interesado en nuestros productos pero no obtuvimos más respuestas de tu parte. Podemos ofrecerte una recotización para {herramienta_ej}.\n\nEntrá a este link para más información 👉 [Link a Emmanuel]"
+            preview = f"¡Hola! Vimos que en un pasado estuviste interesado en nuestros productos pero no obtuvimos más respuestas de tu parte. Podemos ofrecerte una recotización en este momento.\n\nEntrá a este link para más información 👉 [Link a Emmanuel] ¡Quedamos a tu disposición!"
         elif tipo == "Personalizado":
             txt = self.text_dinamico_multilinea.get("1.0", tk.END).strip()
             if not txt: txt = "Escribe tu mensaje libre aquí."
-            preview = txt.replace("[CLIENTE]", nombre_ej).replace("[LINK]", "[Link Autocompletable de WhatsApp]")
-            if "[LINK]" not in txt:
-                preview += f"\n\n[Link agregado por defecto al final]"
-            preview += "\n\n📎 [Tu Imagen Adjunta se enviará junto con este texto]"
+            preview = f"¡Hola! Nos contactamos de WoodTools para acercarte esta información:\n\n{txt.replace('[CLIENTE]', nombre_ej).replace('[LINK]', '[Link de WhatsApp]')}"
+            preview += "\n\n📎 [Imagen Adjunta Obligatoria]"
 
         self.lbl_preview_text.config(text=preview)
 
@@ -275,8 +269,7 @@ class WoodToolsApp:
             if isinstance(w, tk.Label) and w not in [self.lbl_aviso_meta, self.lbl_tip_tags, self.lbl_nombre_imagen]:
                 w.config(bg=COLOR_PANELES, fg="black")
         
-        if tipo in ["Promociones", "Rescate (Te extrañamos)", "Gira Vendedor", "Recotización"]:
-            self.lbl_aviso_meta.pack(anchor="w", pady=(0,2))
+        self.lbl_aviso_meta.pack(anchor="w", pady=(0,2))
             
         if tipo == "Promociones":
             self.lbl_dinamico_titulo.config(text="Porcentaje de Descuento (Ej: 15):"); self.lbl_dinamico_titulo.pack(anchor="w")
@@ -319,7 +312,6 @@ class WoodToolsApp:
         for w in self.frame_telefonos.winfo_children(): w.destroy()
         tk.Label(self.frame_telefonos, text="Clic en una fila de la tabla de arriba para ver los números.", bg=COLOR_PANELES, fg="gray", font=("Segoe UI", 9, "bold")).pack(pady=5)
 
-    # Lógica de gestión de teléfonos
     def alternar_estado_numero(self, num_formateado, es_valido_actual):
         try:
             sel = self.tree.selection()
@@ -482,8 +474,7 @@ class WoodToolsApp:
         threading.Thread(target=fetch_sheets, daemon=True).start()
 
     def _iniciar_carga(self, tipo, ventana):
-        if ventana:
-            ventana.destroy()
+        if ventana: ventana.destroy()
         self.tipo_base_actual = tipo
         self.lbl_status_db.config(text=f"Descargando pestaña '{tipo}'...", fg="white", bg=COLOR_ROJO_WT)
         threading.Thread(target=self._hilo_carga, args=(tipo,)).start()
@@ -494,7 +485,6 @@ class WoodToolsApp:
             return self.root.after(0, lambda: messagebox.showerror("Error", "Base vacía o no se pudo leer la planilla. Asegurate de que tenga el formato correcto."))
             
         for c in ['Zona', 'Vendedor']: df[c] = df[c].fillna("0").astype(str)
-        
         if "prospecto" not in tipo.lower():
             df['Fav_Temp'] = "Sierras"; df['Sec_Temp'] = "Cuchillas"
         
@@ -653,7 +643,7 @@ class WoodToolsApp:
             if not media_id: 
                 self.root.after(0, lambda: self.btn_enviar.config(state="normal"))
                 self.root.after(0, lambda: self.btn_cancelar.config(state="disabled"))
-                return messagebox.showerror("Error", "Fallo subida imagen a Meta.")
+                return messagebox.showerror("Error", "Fallo subida imagen a Meta. La imagen no debe superar los 5MB.")
 
         id_tanda_actual = datetime.now().strftime("TANDA_%Y%m%d_%H%M%S")
         tot = len(df); ok = 0; err = 0; hubo_error_servidor = False; hubo_error_cliente = False
@@ -681,8 +671,8 @@ class WoodToolsApp:
                 
                 if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params['descuento'], link)
                 elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link)
-                elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), f"Contacto: {link}")
-                elif tipo == "Gira Vendedor": res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "Ofertas", f"Contacto: {link}")
+                elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), link)
+                elif tipo == "Gira Vendedor": res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), row.get('Fav_Temp','-'), "ofertas", link)
                 elif tipo == "Recotización": res, tipo_error = mainCode.enviar_recotizacion(t, link)
                 elif tipo == "Personalizado": 
                     txt_base = params.get('texto_extra','')

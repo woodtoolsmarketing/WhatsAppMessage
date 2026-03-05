@@ -9,13 +9,14 @@ from datetime import datetime
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request # LA CLAVE PARA RENOVAR SIN AVISAR
+from google.auth.transport.requests import Request 
 
 # ==========================================
 # CONFIGURACIÓN DE LA API DE WHATSAPP Y SHEETS
 # ==========================================
-CLOUD_API_TOKEN = "EAANcqeZCuZAM4BQ16mjoQJNq0rEHnn0YqYI6POBaZAeUl4vLFAzFtTAg9BRcFoJrU44CBCjpebDTjRLqMB0Y2p5QeEpvx6B01n5ICJO9DvZCzcekXdujnSUHddZBioFvvjM9Kws5bLRtnw6nGd2FRgdHiuB8JbYLqEAB342ClDZBk9bmB7s0XcUXCUEe9FBSktPf3dt8olrJZBpH0xzXTDBfQQHSeOXYlhz"
-PHONE_NUMBER_ID = "1007885345737939"
+# ¡PONÉ TU TOKEN LARGO Y TU ID DE NÚMERO ACÁ!
+CLOUD_API_TOKEN = "EAAUkLctR4q0BQ8mcvr7YtqEacloCMCDHq1AY8VE0gc0ZBIIZBboTSCSEIEOQQKbNtfD7i0HwqiJvnd9FZCdH27rlBVsOXer1Qmlx3N5GAMhO6FmRNmYwOuxCKcJAgqo9Xy8IwtiQcZCFcuJ2fIMQnO7mPvBjEYrAgCDs7eMyn1lZAT7aDaJ8SKG5I1cp7yAZDZD"
+PHONE_NUMBER_ID = "1041050652417644"
 VERSION = "v17.0"
 BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 
@@ -107,6 +108,8 @@ PLANTILLA_PROMOS = "oferta_top_3"
 PLANTILLA_RESCATE = "reactivacion_cliente"
 PLANTILLA_GIRA = "aviso_visita_vendedor"
 PLANTILLA_RECOTIZACION = "recotizacion_prospecto" 
+PLANTILLA_NOVEDADES = "aviso_novedades_wt"
+PLANTILLA_PERSONALIZADO = "contacto_personalizado_wt"
 
 DB_VENDEDORES = {"Valentín": ["5491145394279"], "Carlos": ["5491165630406"], "Emmanuel": ["5491157528428"]}
 LISTA_OBSERVADOS = []
@@ -118,15 +121,20 @@ def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
     else: return "5491145394279"
 
 def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
-    if tipo_mensaje == "Promociones": texto = "Hola, vi las promociones por WhatsApp y busco el [CÓDIGO] de [TIPO DE PRODUCTO] para mi máquina."
-    elif tipo_mensaje == "Rescate (Te extrañamos)": texto = "Hola, me llegó el mensaje. Necesito reponer stock de [TIPO DE HERRAMIENTA] para mi taller."
-    elif tipo_mensaje == "Gira Vendedor": texto = f"Hola, vi que {datos_extra.get('vendedor_nombre', 'el vendedor')} va a estar por mi zona. Necesito encargar [CANTIDAD] de [TIPO DE PRODUCTO] para su visita."
-    elif tipo_mensaje == "Novedades":
-        if datos_extra.get('subtipo', '') == "Ingresos": texto = f"Hola, vi los nuevos ingresos de {datos_extra.get('herramienta', 'herramientas')}. Me interesa el modelo [CÓDIGO O MEDIDA] para cortar [MATERIAL]."
-        else: texto = f"Hola, qué bueno que entró stock de {datos_extra.get('herramienta', 'herramientas')}. Necesito [CANTIDAD] unidades del código [CÓDIGO]."
-    elif tipo_mensaje == "Recotización": texto = f"Hola Emmanuel, soy {datos_extra.get('cliente_nombre', '')}. Me gustaría recibir una recotización por {datos_extra.get('herramienta', 'un producto')}."
-    elif tipo_mensaje == "Personalizado": texto = "Hola, vi el mensaje de WhatsApp y quiero consultar por [PRODUCTO / SERVICIO]."
-    else: texto = "Hola, me contacto para realizar una consulta."
+    if tipo_mensaje == "Promociones": 
+        texto = "Hola, me llegó el mensaje con la promoción y quiero aprovechar el descuento. ¿Me pasan más información?"
+    elif tipo_mensaje == "Rescate (Te extrañamos)": 
+        texto = "Hola, me llegó el mensaje de WhatsApp. Me gustaría ver el catálogo actualizado para reponer stock en mi taller."
+    elif tipo_mensaje == "Gira Vendedor": 
+        texto = f"Hola, vi que {datos_extra.get('vendedor_nombre', 'el vendedor')} va a estar por mi zona. Me gustaría coordinar una visita para hacer un pedido."
+    elif tipo_mensaje == "Novedades": 
+        texto = "Hola, vi el mensaje sobre los nuevos ingresos de stock y me gustaría conocer los modelos disponibles."
+    elif tipo_mensaje == "Recotización": 
+        texto = f"Hola, soy {datos_extra.get('cliente_nombre', 'un cliente')}. Me gustaría recibir una recotización actualizada, por favor."
+    elif tipo_mensaje == "Personalizado": 
+        texto = "Hola, vi el mensaje de WhatsApp y me gustaría hacer una consulta."
+    else: 
+        texto = "Hola, me contacto para realizar una consulta."
         
     msg_codificado = urllib.parse.quote(texto)
     return f"https://wa.me/{tel}?text={msg_codificado}"
@@ -140,19 +148,13 @@ def obtener_credenciales():
         creds = Credentials.from_authorized_user_file(ARCHIVO_TOKEN, SCOPES)
         
     if not creds or not creds.valid:
-        # AQUÍ ESTÁ LA MAGIA PARA QUE NO TE PIDA INICIAR SESIÓN OTRA VEZ
         if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except Exception as e:
-                print(f"Error renovando token en silencio: {e}")
-                creds = None
+            try: creds.refresh(Request())
+            except Exception: creds = None
                 
-        # Solo entra acá si de verdad borraste el token
         if not creds or not creds.valid:
             ruta_creds = obtener_ruta_recurso("credenciales.json")
-            if not os.path.exists(ruta_creds):
-                return None
+            if not os.path.exists(ruta_creds): return None
             flow = InstalledAppFlow.from_client_secrets_file(ruta_creds, SCOPES)
             creds = flow.run_local_server(port=0)
             
@@ -171,29 +173,22 @@ def obtener_pestanas_disponibles():
     try:
         creds = obtener_credenciales()
         if not creds: return ["Base de datos wt"]
-
         gc = gspread.authorize(creds)
         sh = gc.open(NOMBRE_HOJA)
         return [ws.title for ws in sh.worksheets()]
-    except Exception as e:
-        print(f"Error obteniendo pestañas: {e}")
-        return ["Hoja 1"]
+    except Exception: return ["Hoja 1"]
 
 def leer_desde_google_sheets(nombre_pestana=""):
     try:
         creds = obtener_credenciales()
         if not creds: return []
-
         gc = gspread.authorize(creds)
         sh = gc.open(NOMBRE_HOJA)
         
         if nombre_pestana and nombre_pestana.lower() not in ["clientes", "prospectos"]:
-            try:
-                ws = sh.worksheet(nombre_pestana)
-            except gspread.exceptions.WorksheetNotFound:
-                ws = sh.sheet1
-        else:
-            ws = sh.sheet1 
+            try: ws = sh.worksheet(nombre_pestana)
+            except gspread.exceptions.WorksheetNotFound: ws = sh.sheet1
+        else: ws = sh.sheet1 
         
         datos_brutos = ws.get_all_values()
         if len(datos_brutos) < 2: return []
@@ -202,11 +197,7 @@ def leer_desde_google_sheets(nombre_pestana=""):
         headers = [h.strip() if h.strip() != "" else f"Col_Vacia_{i}" for i, h in enumerate(headers_brutos)]
         
         es_formato_complejo = 'Primer número' in headers
-
-        if es_formato_complejo:
-            data = datos_brutos[2:] if len(datos_brutos) > 2 else []
-        else:
-            data = datos_brutos[1:] if len(datos_brutos) > 1 else []
+        data = datos_brutos[2:] if (es_formato_complejo and len(datos_brutos)>2) else (datos_brutos[1:] if len(datos_brutos)>1 else [])
         
         df = pd.DataFrame(data, columns=headers)
         df = df.fillna("")
@@ -214,45 +205,31 @@ def leer_desde_google_sheets(nombre_pestana=""):
         
         for _, row in df.iterrows():
             tels_raw = []
-            
             if es_formato_complejo:
                 for col in ['Primer número', 'Segundo número', 'Tercer número', 'Cuarto número', 'Quinto número']:
                     if col in row and str(row[col]).strip():
-                        val_str = str(row[col]).strip()
-                        val_str_limpio = val_str.replace(" ", "").replace("-", "")
+                        val_str_limpio = str(row[col]).strip().replace(" ", "").replace("-", "")
                         val_num = ''.join(filter(str.isdigit, val_str_limpio))
-                        if not val_num.startswith("000") and val_num:
-                            tels_raw.append(val_str_limpio)
-                
+                        if not val_num.startswith("000") and val_num: tels_raw.append(val_str_limpio)
                 cliente_nom = str(row.get('Nombre', 'Cliente Sin Nombre')).strip() or "Cliente Sin Nombre"
             else:
                 col_tel = 'Numero de Telefono' if 'Numero de Telefono' in row else ('Número' if 'Número' in row else ('Teléfono' if 'Teléfono' in row else None))
                 if col_tel and col_tel in row:
-                    num_raw = str(row[col_tel]).strip()
-                    num_raw_limpio = num_raw.replace(" ", "").replace("-", "")
+                    num_raw_limpio = str(row[col_tel]).strip().replace(" ", "").replace("-", "")
                     num_only = ''.join(filter(str.isdigit, num_raw_limpio))
-                    if not num_only.startswith("000") and num_only:
-                        tels_raw.append(num_raw_limpio)
-                
+                    if not num_only.startswith("000") and num_only: tels_raw.append(num_raw_limpio)
                 cliente_nom = str(row.get('Cliente', row.get('Nombres', row.get('Nombre', 'Sin Nombre')))).strip() or "Sin Nombre"
             
-            zona_corregida = aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0')))
-            num_cli_corregido = aplicar_correcciones_texto(row.get('Número de cliente', ''))
-            
-            cliente_dict = {
-                'Número de cliente': num_cli_corregido,
+            registros.append({
+                'Número de cliente': aplicar_correcciones_texto(row.get('Número de cliente', '')),
                 'Cliente': cliente_nom,
-                'Zona': zona_corregida or '0',
+                'Zona': aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0'))) or '0',
                 'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
                 'Telefonos_Raw': tels_raw,
                 'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip()
-            }
-            registros.append(cliente_dict)
-            
+            })
         return registros
-    except Exception as e: 
-        print(f"Error conectando a Sheets: {e}")
-        return []
+    except Exception: return []
 
 # ==========================================
 # LÓGICA DE DETECCIÓN DE TELÉFONOS
@@ -317,8 +294,7 @@ def revisar_numeros_problematicos():
     txt = f"--- {len(LISTA_OBSERVADOS)} DESCARTADOS ---\n"
     for item in LISTA_OBSERVADOS:
         tels = item.get('Telefonos_Raw', [])
-        tels_str = " | ".join(tels) if tels else "Sin números"
-        txt += f"• {item['Cliente']} -> {tels_str}\n"
+        txt += f"• {item['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
     return txt
 
 def identificar_cols_productos(df): return ['Sierras', 'Cuchillas', 'Mechas', 'Fresas', 'Cabezales']
@@ -328,9 +304,11 @@ def _enviar_request(data):
         headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}", "Content-Type": "application/json"}
         res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data)
         if res.status_code == 200: return True, "OK"
-        elif 400 <= res.status_code < 500: return False, "ERROR DEL CLIENTE"
+        elif 400 <= res.status_code < 500: 
+            print(res.json()) # Imprime el error exacto en consola por si algo falla
+            return False, "ERROR DEL CLIENTE"
         else: return False, "ERROR DEL SERVIDOR" 
-    except Exception as e: return False, "ERROR DEL SERVIDOR"
+    except Exception: return False, "ERROR DEL SERVIDOR"
     
 def subir_imagen_whatsapp(ruta):
     try:
@@ -342,30 +320,65 @@ def subir_imagen_whatsapp(ruta):
         return None
     except: return None
 
+# ==========================================
+# FUNCIONES DE ENVÍO DE PLANTILLAS
+# ==========================================
 def enviar_promocion(tel, nombre, descuento, link): 
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [{
-                "type": "body", "parameters": [{"type": "text", "text": str(nombre)}, {"type": "text", "text": str(descuento)}, {"type": "text", "text": str(link)}]
+                "type": "body", "parameters": [
+                    {"type": "text", "parameter_name": "1", "text": str(nombre)}, 
+                    {"type": "text", "parameter_name": "2", "text": str(descuento)}, 
+                    {"type": "text", "parameter_name": "3", "text": str(link)}
+                ]
             }]
         }
     })
 
 def enviar_rescate(tel, nom, prod, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [{"type": "text", "text": str(nom)}, {"type": "text", "text": str(prod)}, {"type": "text", "text": str(link)}]}]}})
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [
+        {"type": "text", "parameter_name": "1", "text": str(nom)}, 
+        {"type": "text", "parameter_name": "2", "text": str(prod)}, 
+        {"type": "text", "parameter_name": "3", "text": str(link)}
+    ]}]}})
 
 def enviar_gira(tel, vend, p1, p2, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [{"type": "text", "text": str(vend)}, {"type": "text", "text": str(p1)}, {"type": "text", "text": str(p2)}, {"type": "text", "text": str(link)}]}]}})
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [
+        {"type": "text", "parameter_name": "1", "text": str(vend)}, 
+        {"type": "text", "parameter_name": "2", "text": str(p1)}, 
+        {"type": "text", "parameter_name": "3", "text": str(p2)}, 
+        {"type": "text", "parameter_name": "4", "text": str(link)}
+    ]}]}})
 
 def enviar_recotizacion(tel, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [{"type": "text", "text": str(link)}]}]}})
-
-def enviar_personalizado(tel, caption_final, media_id): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "image", "image": {"id": media_id, "caption": str(caption_final)}})
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [
+        {"type": "text", "parameter_name": "1", "text": str(link)}
+    ]}]}})
 
 def enviar_novedades(tel, tipo_novedad, herramienta, link_wa):
-    txt = f"Hola, tenemos nuevas incorporaciones de {herramienta}. Si querés más información entrá a este link: {link_wa}" if tipo_novedad == "Ingresos" else f"Hola, te informamos que pudimos obtener nuevamente stock de {herramienta}. Para conocer cuáles son los modelos entrá a este link: {link_wa}"
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "text", "text": {"body": txt}})
+    frase = "Acaban de ingresar nuevos modelos." if tipo_novedad == "Ingresos" else "Pudimos reponer el stock que esperabas."
+    return _enviar_request({
+        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
+            "name": PLANTILLA_NOVEDADES, "language": {"code": "es"}, "components": [{
+                "type": "body", "parameters": [
+                    {"type": "text", "parameter_name": "1", "text": str(herramienta)},
+                    {"type": "text", "parameter_name": "2", "text": str(frase)},
+                    {"type": "text", "parameter_name": "3", "text": str(link_wa)}
+                ]
+            }]
+        }
+    })
+
+def enviar_personalizado(tel, caption_final, media_id): 
+    return _enviar_request({
+        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
+            "name": PLANTILLA_PERSONALIZADO, "language": {"code": "es"}, "components": [
+                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+                {"type": "body", "parameters": [{"type": "text", "parameter_name": "1", "text": str(caption_final)[:1000]}]}
+            ]
+        }
+    })
 
 def enviar_solo_imagen(tel, media_id):
     return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "image", "image": {"id": media_id}})
