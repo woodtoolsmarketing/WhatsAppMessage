@@ -324,6 +324,7 @@ def subir_imagen_whatsapp(ruta):
 # FUNCIONES DE ENVÍO DE PLANTILLAS
 # ==========================================
 def enviar_promocion(tel, nombre, descuento, link): 
+    # Esta plantilla NO lleva imagen en el encabezado
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [{
@@ -336,37 +337,47 @@ def enviar_promocion(tel, nombre, descuento, link):
         }
     })
 
-def enviar_rescate(tel, nom, prod, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [
-        {"type": "text", "parameter_name": "1", "text": str(nom)}, 
-        {"type": "text", "parameter_name": "2", "text": str(prod)}, 
-        {"type": "text", "parameter_name": "3", "text": str(link)}
-    ]}]}})
+def enviar_rescate(tel, nom, prod, link, media_id): 
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [
+        {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+        {"type": "body", "parameters": [
+            {"type": "text", "parameter_name": "1", "text": str(nom)}, 
+            {"type": "text", "parameter_name": "2", "text": str(prod)}, 
+            {"type": "text", "parameter_name": "3", "text": str(link)}
+        ]}
+    ]}})
 
-def enviar_gira(tel, vend, p1, p2, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [
-        {"type": "text", "parameter_name": "1", "text": str(vend)}, 
-        {"type": "text", "parameter_name": "2", "text": str(p1)}, 
-        {"type": "text", "parameter_name": "3", "text": str(p2)}, 
-        {"type": "text", "parameter_name": "4", "text": str(link)}
-    ]}]}})
+def enviar_gira(tel, vend, p1, p2, link, media_id): 
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [
+        {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+        {"type": "body", "parameters": [
+            {"type": "text", "parameter_name": "1", "text": str(vend)}, 
+            {"type": "text", "parameter_name": "2", "text": str(p1)}, 
+            {"type": "text", "parameter_name": "3", "text": str(p2)}, 
+            {"type": "text", "parameter_name": "4", "text": str(link)}
+        ]}
+    ]}})
 
-def enviar_recotizacion(tel, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [{"type": "body", "parameters": [
-        {"type": "text", "parameter_name": "1", "text": str(link)}
-    ]}]}})
+def enviar_recotizacion(tel, link, media_id): 
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [
+        {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+        {"type": "body", "parameters": [
+            {"type": "text", "parameter_name": "1", "text": str(link)}
+        ]}
+    ]}})
 
-def enviar_novedades(tel, tipo_novedad, herramienta, link_wa):
+def enviar_novedades(tel, tipo_novedad, herramienta, link_wa, media_id):
     frase = "Acaban de ingresar nuevos modelos." if tipo_novedad == "Ingresos" else "Pudimos reponer el stock que esperabas."
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_NOVEDADES, "language": {"code": "es"}, "components": [{
-                "type": "body", "parameters": [
+            "name": PLANTILLA_NOVEDADES, "language": {"code": "es"}, "components": [
+                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+                {"type": "body", "parameters": [
                     {"type": "text", "parameter_name": "1", "text": str(herramienta)},
                     {"type": "text", "parameter_name": "2", "text": str(frase)},
                     {"type": "text", "parameter_name": "3", "text": str(link_wa)}
-                ]
-            }]
+                ]}
+            ]
         }
     })
 
