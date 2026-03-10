@@ -8,10 +8,16 @@ import sys
 import time
 import ctypes  
 import urllib.parse
+import requests  # <-- Agregado para conectarnos a Render
 from datetime import datetime
 
 # --- IMPORTAMOS TU BACKEND (Google Sheets) ---
 import mainCode 
+
+# ==========================================
+# ⚠️ TU LINK DE RENDER ACA (Sin el /webhook al final) ⚠️
+URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
+# ==========================================
 
 # Definición del color corporativo oficial de WoodTools
 COLOR_ROJO_WT = "#a41e22" 
@@ -679,7 +685,6 @@ class WoodToolsApp:
                 if self.cancelar_envio: break
                 res = False; tipo_error = ""
                 
-                # LA MAGIA NUEVA: Mandamos todo junto en el mismo paquete
                 if tipo == "Promociones": 
                     res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params['descuento'], link)
                 elif tipo == "Novedades": 
@@ -724,29 +729,26 @@ class WoodToolsApp:
             self.root.after(0, lambda: messagebox.showinfo("Reporte Final", f"Campaña Finalizada.\n\nEnviados con éxito: {ok}\nErrores: {err}\n\nQuedó registrada en el historial como: {estado_final_tanda}"))
 
     # ==========================================
-    # PANEL DE RENDIMIENTO Y MÉTRICAS
+    # PANEL DE RENDIMIENTO Y MÉTRICAS (CONECTADO A LA NUBE)
     # ==========================================
     def abrir_rendimiento(self):
-        # Creamos la ventana siempre, incluso si todavía no hay datos
         vent_rendimiento = tk.Toplevel(self.root)
         vent_rendimiento.title("Rendimiento de Campañas")
         vent_rendimiento.geometry("1100x600")
         vent_rendimiento.configure(bg=COLOR_PANELES)
         
-        # --- CABECERA (TÍTULO Y BOTÓN RECARGAR) ---
         frame_header = tk.Frame(vent_rendimiento, bg=COLOR_PANELES)
         frame_header.pack(fill="x", pady=15, padx=20)
         
         tk.Label(frame_header, text="📊 Panel de Rendimiento Histórico", font=("Segoe UI", 16, "bold"), bg=COLOR_PANELES, fg=COLOR_ROJO_WT).pack(side="left")
         
-        # --- TABLA DE MÉTRICAS ---
         frame_tabla = tk.Frame(vent_rendimiento)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
-        columnas = ("Estado", "Fecha", "Campaña", "Intentos", "Entregados", "Leídos", "Open Rate", "Click Rate")
+        columnas = ("Estado", "Fecha", "Campaña", "Intentos (PC)", "Entregados (Nube)", "Leídos", "Open Rate", "Click Rate")
         tree_rendimiento = ttk.Treeview(frame_tabla, columns=columnas, show="headings", height=15)
         
-        anchos = [80, 100, 200, 80, 100, 80, 100, 100]
+        anchos = [80, 100, 200, 100, 120, 80, 100, 100]
         for col, ancho in zip(columnas, anchos):
             tree_rendimiento.heading(col, text=col)
             tree_rendimiento.column(col, width=ancho, anchor="center")
@@ -756,55 +758,58 @@ class WoodToolsApp:
         scroll.pack(side="right", fill="y")
         tree_rendimiento.pack(fill="both", expand=True)
         
-        tk.Label(vent_rendimiento, text="* Nota: Entregados, Leídos, Open Rate y Click Rate muestran datos de prueba. Para ver los datos reales, se requiere conectar el programa con el servidor en la nube (Render).", font=("Segoe UI", 8, "italic"), bg=COLOR_PANELES, fg="gray").pack(pady=5)
+        lbl_nota = tk.Label(vent_rendimiento, text="* Nota: Los datos de Entregados, Leídos e Interacciones se obtienen en tiempo real desde el servidor de Render.", font=("Segoe UI", 8, "italic"), bg=COLOR_PANELES, fg="gray")
+        lbl_nota.pack(pady=5)
 
-        # --- FUNCIÓN QUE LLENA LA TABLA ---
         def cargar_datos_rendimiento():
-            # 1. Limpiamos la tabla por si estamos recargando
             for item in tree_rendimiento.get_children():
                 tree_rendimiento.delete(item)
                 
-            # 2. Buscamos los datos actualizados
             tandas = mainCode.obtener_tandas_campanas()
             if not tandas:
-                # Si no hay campañas, metemos un aviso en la primera fila
                 tree_rendimiento.insert("", "end", values=("---", "---", "Todavía no hay campañas registradas", "---", "---", "---", "---", "---"))
                 return
                 
-            # 3. Rellenamos con la info local
+            # --- LA MAGIA: LLAMAMOS A RENDER ---
+            datos_nube = {}
+            try:
+                # Le pedimos los números a tu URL (con /metricas al final)
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/metricas", timeout=5)
+                if res.status_code == 200:
+                    datos_nube = res.json()
+            except Exception as e:
+                print(f"Error conectando al servidor en la nube: {e}")
+
             for t in tandas:
                 estado_crudo = t.get('estado_tanda', 'ERROR')
-                # Lógica del semáforo
-                if "EXITO" in estado_crudo.upper():
-                    icono_estado = "🟢 OK"
-                elif "CANCELADA" in estado_crudo.upper():
-                    icono_estado = "🔴 CANC."
-                else:
-                    icono_estado = "🔴 ERR."
+                if "EXITO" in estado_crudo.upper(): icono_estado = "🟢 OK"
+                elif "CANCELADA" in estado_crudo.upper(): icono_estado = "🔴 CANC."
+                else: icono_estado = "🔴 ERR."
                     
                 fecha = t.get('fecha_inicio', '')[:10]
                 nombre = t.get('tipo_campana', 'Desconocida')
-                intentos = t.get('total_msgs', 0)
+                intentos_locales = t.get('total_msgs', 0)
                 
-                # --- DATOS PLACEHOLDER HASTA CONECTAR CON RENDER ---
-                entregados_simulados = int(intentos * 0.9) if intentos > 0 else 0
-                leidos_simulados = int(entregados_simulados * 0.4)
-                clics_simulados = int(entregados_simulados * 0.05)
+                # --- BUSCAMOS LOS DATOS REALES DE ESA FECHA ---
+                # Si el servidor no mandó info de ese día, devolvemos 0
+                metricas_dia = datos_nube.get(fecha, {})
+                entregados_reales = metricas_dia.get("entregados", 0)
+                leidos_reales = metricas_dia.get("leidos", 0)
+                clics_reales = metricas_dia.get("respondidos", 0)
                 
-                open_rate = f"{(leidos_simulados / entregados_simulados * 100):.1f}%" if entregados_simulados > 0 else "0%"
-                click_rate = f"{(clics_simulados / entregados_simulados * 100):.1f}%" if entregados_simulados > 0 else "0%"
+                # Calcular la matemática de marketing con datos vivos
+                open_rate = f"{(leidos_reales / entregados_reales * 100):.1f}%" if entregados_reales > 0 else "0%"
+                click_rate = f"{(clics_reales / entregados_reales * 100):.1f}%" if entregados_reales > 0 else "0%"
                 
                 tree_rendimiento.insert("", "end", values=(
-                    icono_estado, fecha, nombre, intentos, 
-                    f"{entregados_simulados} (N/A)", f"{leidos_simulados} (N/A)", 
+                    icono_estado, fecha, nombre, intentos_locales, 
+                    entregados_reales, leidos_reales, 
                     open_rate, click_rate
                 ))
 
-        # El botón de recargar llama a la función de arriba
-        btn_recargar = tk.Button(frame_header, text="🔄 Recargar", command=cargar_datos_rendimiento, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
+        btn_recargar = tk.Button(frame_header, text="🔄 Recargar Nube", command=cargar_datos_rendimiento, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
         btn_recargar.pack(side="right")
 
-        # Cargamos los datos por primera vez al abrir la ventana
         cargar_datos_rendimiento()
 
 if __name__ == "__main__":
