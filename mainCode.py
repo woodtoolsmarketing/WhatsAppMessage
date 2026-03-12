@@ -111,7 +111,13 @@ PLANTILLA_RECOTIZACION = "recotizacion_prospecto"
 PLANTILLA_NOVEDADES = "aviso_novedades_wt"
 PLANTILLA_PERSONALIZADO = "contacto_personalizado_wt"
 
-DB_VENDEDORES = {"Valentín": ["5491145394279"], "Carlos": ["5491165630406"], "Emmanuel": ["5491157528428"]}
+# --- ACÁ SE AGREGÓ A ARIEL A LA LISTA DE VENDEDORES ---
+DB_VENDEDORES = {
+    "Valentín": ["5491145394279"], 
+    "Carlos": ["5491165630406"], 
+    "Emmanuel": ["5491157528428"],
+    "Ariel": ["5491134811771"]
+}
 LISTA_OBSERVADOS = []
 
 def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
