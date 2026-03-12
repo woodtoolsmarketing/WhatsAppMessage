@@ -5147,7 +5147,7 @@
  [],
  False,
  False,
- 1773317035,
+ 1773335778,
  [('runw.exe',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],
