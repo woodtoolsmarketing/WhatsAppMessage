@@ -329,15 +329,14 @@ def subir_imagen_whatsapp(ruta):
 # ==========================================
 # FUNCIONES DE ENVÍO DE PLANTILLAS
 # ==========================================
-def enviar_promocion(tel, nombre, descuento, link): 
-    # Esta plantilla NO lleva imagen en el encabezado
+def enviar_promocion(tel, nombre, link): 
+    # SIN IMAGEN - 2 Variables (Nombre, Link)
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [{
                 "type": "body", "parameters": [
                     {"type": "text", "parameter_name": "1", "text": str(nombre)}, 
-                    {"type": "text", "parameter_name": "2", "text": str(descuento)}, 
-                    {"type": "text", "parameter_name": "3", "text": str(link)}
+                    {"type": "text", "parameter_name": "2", "text": str(link)}
                 ]
             }]
         }
@@ -353,20 +352,16 @@ def enviar_rescate(tel, nom, prod, link, media_id):
         ]}
     ]}})
 
-def enviar_gira(tel, vend, p1, p2, link, media_id): 
+def enviar_gira(tel, vend, link): 
     return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [
-        {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
         {"type": "body", "parameters": [
             {"type": "text", "parameter_name": "1", "text": str(vend)}, 
-            {"type": "text", "parameter_name": "2", "text": str(p1)}, 
-            {"type": "text", "parameter_name": "3", "text": str(p2)}, 
-            {"type": "text", "parameter_name": "4", "text": str(link)}
+            {"type": "text", "parameter_name": "2", "text": str(link)}
         ]}
     ]}})
 
-def enviar_recotizacion(tel, link, media_id): 
+def enviar_recotizacion(tel, link): 
     return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [
-        {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
         {"type": "body", "parameters": [
             {"type": "text", "parameter_name": "1", "text": str(link)}
         ]}
