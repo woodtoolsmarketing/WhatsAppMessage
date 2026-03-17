@@ -676,6 +676,12 @@ class WoodToolsApp:
             
             link = mainCode.generar_link_whatsapp(tel_v, tipo, d_extra)
             
+            # --- AGREGAR ESTAS DOS LÍNEAS NUEVAS ACÁ ---
+            url_render = f"{URL_SERVIDOR_RENDER}/asignar_vendedor"
+            try: requests.post(url_render, json={"cliente": row['Telefonos_Validos'][0], "vendedor_tel": tel_v}, timeout=3)
+            except: pass
+            # ------------------------------------------
+
             for t in row['Telefonos_Validos']:
                 if self.cancelar_envio: break
                 res = False; tipo_error = ""
