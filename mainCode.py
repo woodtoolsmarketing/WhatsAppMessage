@@ -124,7 +124,6 @@ PLANTILLA_RECOTIZACION = "recotizacion_prospecto"
 PLANTILLA_NOVEDADES = "aviso_novedades_wt"
 PLANTILLA_PERSONALIZADO = "contacto_personalizado_wt"
 
-# --- DB DE VENDEDORES (SE USAN LOS NOMBRES CORTOS COMO CLAVES) ---
 DB_VENDEDORES = {
     "Valentín": ["5491145394279"], 
     "Carlos": ["5491165630406"], 

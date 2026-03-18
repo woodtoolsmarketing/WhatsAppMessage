@@ -15,10 +15,11 @@ from datetime import datetime
 import mainCode 
 
 # ==========================================
-# ⚠️ TU LINK DE RENDER ACA ⚠️
+# ⚠️ TU LINK DE RENDER ACA (Sin el /webhook al final) ⚠️
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 # ==========================================
 
+# Definición del color corporativo oficial de WoodTools
 COLOR_ROJO_WT = "#a41e22" 
 COLOR_PANELES = "#f5f5f5"
 
@@ -34,13 +35,19 @@ class WoodToolsApp:
         self.root = root
         self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM")
         self.root.geometry("1500x900") 
+        
+        # PANTALLA COMPLETA AL INICIAR
         self.root.state('zoomed') 
+        
         self.root.configure(bg=COLOR_ROJO_WT) 
         self.cancelar_envio = False
         self.tipo_base_actual = "clientes" 
         
         mainCode.inicializar_db()
         
+        # ==========================================
+        # BARRA DE MENÚ SUPERIOR
+        # ==========================================
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
         
@@ -67,6 +74,9 @@ class WoodToolsApp:
         self.df_filtrado = pd.DataFrame()
         self.ruta_imagen_seleccionada = None
         
+        # ==========================================
+        # 1. CABECERA (Márgenes ajustados)
+        # ==========================================
         frame_top = tk.Frame(root, pady=5, padx=10, bg=COLOR_ROJO_WT)
         frame_top.pack(fill="x")
         self.cargar_logo_con_ovalo(frame_top)
@@ -83,6 +93,9 @@ class WoodToolsApp:
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
+        # ==========================================
+        # 2. ÁREA DE FILTROS (Más compacto)
+        # ==========================================
         frame_filtros = tk.LabelFrame(root, text="Filtros", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")) 
         frame_filtros.pack(fill="x", padx=20, pady=2)
         
@@ -105,6 +118,9 @@ class WoodToolsApp:
         self.lbl_conteo = tk.Label(frame_filtros, text="Regs: 0", font=("Segoe UI", 10, "bold"), fg="#2196F3", bg=COLOR_PANELES)
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
+        # ==========================================
+        # 3. CONFIGURACIÓN DEL MENSAJE (Mucho más chato)
+        # ==========================================
         frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
         frame_campana.pack(fill="x", padx=20, pady=2)
 
@@ -116,19 +132,18 @@ class WoodToolsApp:
 
         tk.Label(frame_campana, text="Enviar como:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", padx=10)
         
-        # --- MENÚ "ENVIAR COMO" SOLO CON LOS BASE ---
-        opciones_vendedores_base = ["AUTOMÁTICO (Según Planilla)", "Valentín", "Carlos", "Emmanuel", "Ariel"]
+        # --- EL COMBOBOX INICIA CON EL FILTRO POR DEFECTO ---
+        opciones_vendedores_base = ["AUTOMÁTICO (Según Planilla)", "Emmanuel", "Carlos", "Valentín", "Ariel"]
         self.combo_vendedor = ttk.Combobox(frame_campana, values=opciones_vendedores_base, state="readonly", width=25)
         self.combo_vendedor.grid(row=1, column=1, padx=10, pady=2, sticky="n")
         self.combo_vendedor.current(0)
+        self.combo_vendedor.bind("<<ComboboxSelected>>", self.actualizar_preview)
 
         self.frame_dinamico = tk.Frame(frame_campana, bg=COLOR_PANELES)
         self.frame_dinamico.grid(row=0, column=2, rowspan=2, padx=10, sticky="nwe")
         
         self.lbl_dinamico_titulo = tk.Label(self.frame_dinamico, text="", bg=COLOR_PANELES, fg="black", font=("Arial", 9, "bold"))
         
-        # --- COMBOBOX DINÁMICO SOLO PARA GIRA ---
-        self.combo_dinamico_vendedor = ttk.Combobox(self.frame_dinamico, state="readonly", width=27)
         self.entry_dinamico_texto = tk.Entry(self.frame_dinamico, width=30)
         self.text_dinamico_multilinea = tk.Text(self.frame_dinamico, width=40, height=3, font=("Arial", 10), relief="solid", bd=1)
         
@@ -150,7 +165,6 @@ class WoodToolsApp:
         self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=7, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=5, pady=5, fg="#333")
         self.lbl_preview_text.pack(padx=5, pady=2, fill="both", expand=True)
 
-        self.combo_dinamico_vendedor.bind("<<ComboboxSelected>>", self.actualizar_preview)
         self.entry_dinamico_texto.bind("<KeyRelease>", self.actualizar_preview)
         self.text_dinamico_multilinea.bind("<KeyRelease>", self.actualizar_preview)
         self.combo_novedad_subtipo.bind("<<ComboboxSelected>>", self.actualizar_preview)
@@ -158,6 +172,11 @@ class WoodToolsApp:
 
         self.actualizar_inputs_dinamicos() 
 
+        # ==========================================
+        # 4. BOTONES DE ACCIÓN Y TABLAS
+        # ==========================================
+        
+        # Panel de botones comprimido
         frame_accion = tk.LabelFrame(root, text="Panel de Control", pady=5, padx=20, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"), relief="groove", bd=2)
         frame_accion.pack(fill="x", side="bottom", padx=20, pady=5)
         
@@ -191,10 +210,14 @@ class WoodToolsApp:
         scroll = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scroll.set); scroll.pack(side="right", fill="y"); self.tree.pack(fill="both", expand=True)
 
+    # ==========================================
+    # FUNCIONES DE INTERFAZ Y PREVIEW 
+    # ==========================================
     def cargar_logo_con_ovalo(self, parent):
         ruta_1 = obtener_ruta_interna(r"Imagenes\logo.png")
         ruta_2 = obtener_ruta_interna("logo.png")
         ruta_final = ruta_1 if os.path.exists(ruta_1) else ruta_2
+        
         if os.path.exists(ruta_final):
             try:
                 img_pil = Image.open(ruta_final)
@@ -203,13 +226,17 @@ class WoodToolsApp:
                 new_w = int((h_deseado/h)*w)
                 img_resized = img_pil.resize((new_w, h_deseado), Image.Resampling.LANCZOS)
                 self.logo_img = ImageTk.PhotoImage(img_resized)
+                
                 ovalo_w = new_w + 30 
                 ovalo_h = h_deseado + 10 
+                
                 canvas = tk.Canvas(parent, width=ovalo_w, height=ovalo_h, bg=COLOR_ROJO_WT, highlightthickness=0)
                 canvas.pack(side=tk.RIGHT, padx=15)
+
                 canvas.create_oval(2, 2, ovalo_w-2, ovalo_h-2, fill=COLOR_PANELES, outline=COLOR_PANELES)
                 canvas.create_image(ovalo_w/2, ovalo_h/2, image=self.logo_img)
-            except Exception as e: print(f"Error cargando logo: {e}")
+            except Exception as e: 
+                print(f"Error cargando logo: {e}")
 
     def verificar_observados(self):
         msg = mainCode.revisar_numeros_problematicos()
@@ -233,14 +260,14 @@ class WoodToolsApp:
         elif tipo == "Rescate (Te extrañamos)":
             preview = f"[📷 IMAGEN]\n¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej} para tu taller. Entrá a este link para más información 👉 [Link de WhatsApp] ¡Saludos!"
         elif tipo == "Gira Vendedor":
-            # --- DICCIONARIO PARA MOSTRAR NOMBRE COMPLETO EN PREVIEW ---
+            # --- ACÁ LEE AL VENDEDOR DESDE EL MENÚ PRINCIPAL Y PONE EL NOMBRE COMPLETO ---
+            v_corto = self.combo_vendedor.get()
             nombres_completos = {
                 "Alan": "Alan Calvi", "Ezequiel": "Ezequiel Calvi", 
                 "Luis": "Luis Quevedo", "Nicolas": "Nicolas Saad", 
-                "Roberto": "Roberto Golik"
+                "Roberto": "Roberto Golik", "Ariel": "Ariel Sosa"
             }
-            v_corto = self.combo_dinamico_vendedor.get()
-            vend = nombres_completos.get(v_corto, "[Nombre Vendedor]")
+            vend = nombres_completos.get(v_corto, v_corto)
             preview = f"¡Hola! Te avisamos que el vendedor {vend} estará visitando clientes por tu zona. Entrá a este link para coordinar la visita 👉 [Link de WhatsApp] ¡Nos vemos!"
         elif tipo == "Novedades":
             her = self.combo_novedad_herramienta.get() or "[Herramienta]"
@@ -257,6 +284,21 @@ class WoodToolsApp:
 
     def actualizar_inputs_dinamicos(self, e=None):
         tipo = self.tipo_mensaje_var.get()
+        
+        # --- LÓGICA DINÁMICA DEL MENÚ "ENVIAR COMO" ---
+        if tipo in ["Promociones", "Rescate (Te extrañamos)", "Personalizado", "Novedades"]:
+            opciones = ["AUTOMÁTICO (Según Planilla)", "Emmanuel", "Carlos", "Valentín", "Ariel"]
+        elif tipo == "Recotización":
+            opciones = ["Emmanuel"]
+        elif tipo == "Gira Vendedor":
+            opciones = ["Ariel", "Alan", "Nicolas", "Ezequiel", "Roberto", "Luis"]
+        else:
+            opciones = ["AUTOMÁTICO (Según Planilla)", "Valentín", "Carlos", "Emmanuel", "Ariel"]
+            
+        self.combo_vendedor['values'] = opciones
+        if self.combo_vendedor.get() not in opciones:
+            self.combo_vendedor.current(0)
+            
         for w in self.frame_dinamico.winfo_children():
             w.pack_forget()
             if isinstance(w, tk.Label) and w not in [self.lbl_aviso_meta, self.lbl_tip_tags, self.lbl_nombre_imagen]:
@@ -267,14 +309,7 @@ class WoodToolsApp:
         if tipo == "Promociones":
             tk.Label(self.frame_dinamico, text="Se enviará automáticamente Nombre y Link.", bg=COLOR_PANELES, fg="blue").pack(anchor="w", pady=2)
         elif tipo == "Gira Vendedor":
-            self.lbl_dinamico_titulo.config(text="Seleccioná el Vendedor de la Gira:"); self.lbl_dinamico_titulo.pack(anchor="w")
-            
-            # --- ACÁ SOLO APARECEN LOS NUEVOS VENDEDORES DE GIRA ---
-            self.combo_dinamico_vendedor['values'] = ["Alan", "Ezequiel", "Luis", "Nicolas", "Roberto"]
-            if not self.combo_dinamico_vendedor.get() or self.combo_dinamico_vendedor.get() not in ["Alan", "Ezequiel", "Luis", "Nicolas", "Roberto"]: 
-                self.combo_dinamico_vendedor.current(0)
-            self.combo_dinamico_vendedor.pack(anchor="w", pady=2)
-            
+            tk.Label(self.frame_dinamico, text="El vendedor se selecciona en 'Enviar como' (arriba).", bg=COLOR_PANELES, fg="blue").pack(anchor="w", pady=2)
         elif tipo == "Personalizado":
             self.lbl_dinamico_titulo.config(text="Mensaje Libre a tu medida:"); self.lbl_dinamico_titulo.pack(anchor="w")
             self.lbl_tip_tags.pack(anchor="w", pady=(0, 2)) 
@@ -286,7 +321,7 @@ class WoodToolsApp:
             self.combo_novedad_herramienta['values'] = ["Sierras", "Mechas", "Cuchillas", "Fresas"]
             if not self.combo_novedad_herramienta.get(): self.combo_novedad_herramienta.current(0)
         elif tipo == "Recotización":
-            tk.Label(self.frame_dinamico, text="El link apuntará a Emmanuel.", fg="blue", bg=COLOR_PANELES, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=2)
+            tk.Label(self.frame_dinamico, text="El link apuntará a Emmanuel y se envía desde su número.", fg="blue", bg=COLOR_PANELES, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=2)
 
         ttk.Separator(self.frame_dinamico, orient='horizontal').pack(fill='x', pady=5)
         
@@ -580,34 +615,27 @@ class WoodToolsApp:
             if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
             ruta_final = os.path.join(carpeta_reportes, f"Reporte_Campanas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
             
-            # Usar XlsxWriter para la exportación con logo al final
             writer = pd.ExcelWriter(ruta_final, engine='xlsxwriter')
             df_final.to_excel(writer, index=False, sheet_name='Log_Campañas')
             
             workbook  = writer.book
             worksheet = writer.sheets['Log_Campañas']
             
-            # Ajustar ancho de columnas para que se vea mejor
             worksheet.set_column('A:A', 30)
             worksheet.set_column('B:G', 20)
             
-            # Lógica para pegar el logo al final
             ruta_logo = obtener_ruta_interna(r"Imagenes\logo.png")
             if not os.path.exists(ruta_logo): 
                 ruta_logo = obtener_ruta_interna("logo.png")
                 
             if os.path.exists(ruta_logo):
-                max_row = len(df_final) + 1 # Fila después del último dato
+                max_row = len(df_final) + 1 
                 fecha_hora_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Escribimos el texto de la fecha y hora
                 formato_texto = workbook.add_format({'bold': True, 'font_color': '#a41e22'})
                 worksheet.write(max_row + 2, 0, f"Reporte generado el: {fecha_hora_actual}", formato_texto)
-                
-                # Insertamos el logo debajo del texto
                 worksheet.insert_image(max_row + 4, 0, ruta_logo, {'x_scale': 0.6, 'y_scale': 0.6})
             
-            # Guardar el archivo Excel
             writer.close()
             
             os.startfile(carpeta_reportes) 
@@ -652,18 +680,16 @@ class WoodToolsApp:
             params['subtipo_novedad'] = self.combo_novedad_subtipo.get()
             params['herramienta_novedad'] = her
         elif tipo == "Gira Vendedor":
-            v_corto = self.combo_dinamico_vendedor.get()
-            if not v_corto: return messagebox.showerror("Error", "Debe seleccionar el vendedor de la gira.")
+            v_corto = self.combo_vendedor.get()
+            if not v_corto or "AUTOMÁTICO" in v_corto:
+                return messagebox.showerror("Error", "Para Gira Vendedor, seleccione a alguien de la lista (Ariel, Alan, Nicolas, etc).")
             
-            # --- MAPEO DE NOMBRE COMPLETO PARA EL MENSAJE ---
             nombres_completos = {
                 "Alan": "Alan Calvi", "Ezequiel": "Ezequiel Calvi", 
                 "Luis": "Luis Quevedo", "Nicolas": "Nicolas Saad", 
-                "Roberto": "Roberto Golik"
+                "Roberto": "Roberto Golik", "Ariel": "Ariel Sosa"
             }
-            # Guardamos el nombre COMPLETO para que se escriba en el chat
             params['texto_extra'] = nombres_completos.get(v_corto, v_corto) 
-            # Guardamos el nombre CORTO para buscar su teléfono en la base de datos interna
             params['vendedor_gira_corto'] = v_corto 
             
         elif tipo == "Personalizado":
@@ -704,7 +730,6 @@ class WoodToolsApp:
                 d_extra = {'vendedor_nombre': params.get('texto_extra',''), 'herramienta': params.get('herramienta_novedad',''), 'subtipo': params.get('subtipo_novedad','')}
                 tel_para_link = tel_v
                 
-                # --- ENRUTAMOS EL LINK AZUL AL CELULAR DEL VENDEDOR DE LA GIRA ---
                 if tipo == "Gira Vendedor":
                     nombre_gira_corto = params.get('vendedor_gira_corto', '')
                     tel_para_link = mainCode.DB_VENDEDORES.get(nombre_gira_corto, [tel_v])[0]
