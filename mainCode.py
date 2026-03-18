@@ -101,6 +101,19 @@ def obtener_tandas_campanas():
         return df.to_dict('records')
     except Exception as e: return []
 
+def obtener_datos_reporte_por_tandas(lista_tandas):
+    if not lista_tandas: return pd.DataFrame()
+    try:
+        conn = sqlite3.connect(ARCHIVO_DB)
+        placeholders = ','.join('?' * len(lista_tandas))
+        query = f"SELECT * FROM historial WHERE tanda_id IN ({placeholders}) ORDER BY fecha_hora ASC"
+        df = pd.read_sql_query(query, conn, params=lista_tandas)
+        conn.close()
+        return df
+    except Exception as e:
+        print(f"Error armando el reporte detallado: {e}")
+        return pd.DataFrame()
+
 # ==========================================
 # PLANTILLAS Y VENDEDORES
 # ==========================================
@@ -111,12 +124,17 @@ PLANTILLA_RECOTIZACION = "recotizacion_prospecto"
 PLANTILLA_NOVEDADES = "aviso_novedades_wt"
 PLANTILLA_PERSONALIZADO = "contacto_personalizado_wt"
 
-# --- ACÁ SE AGREGÓ A ARIEL A LA LISTA DE VENDEDORES ---
+# --- DB DE VENDEDORES (SE USAN LOS NOMBRES CORTOS COMO CLAVES) ---
 DB_VENDEDORES = {
     "Valentín": ["5491145394279"], 
     "Carlos": ["5491165630406"], 
     "Emmanuel": ["5491157528428"],
-    "Ariel": ["5491134811771"]
+    "Ariel": ["5491134811771"],
+    "Roberto": ["5491164591316"],
+    "Nicolas": ["5491157528427"],
+    "Ezequiel": ["5491153455274"],
+    "Alan": ["5491156321012"],
+    "Luis": ["5491168457778"]
 }
 LISTA_OBSERVADOS = []
 
@@ -311,7 +329,7 @@ def _enviar_request(data):
         res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data)
         if res.status_code == 200: return True, "OK"
         elif 400 <= res.status_code < 500: 
-            print(res.json()) # Imprime el error exacto en consola por si algo falla
+            print(res.json()) 
             return False, "ERROR DEL CLIENTE"
         else: return False, "ERROR DEL SERVIDOR" 
     except Exception: return False, "ERROR DEL SERVIDOR"
@@ -330,7 +348,6 @@ def subir_imagen_whatsapp(ruta):
 # FUNCIONES DE ENVÍO DE PLANTILLAS
 # ==========================================
 def enviar_promocion(tel, nombre, link): 
-    # SIN IMAGEN - 2 Variables (Nombre, Link)
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [{
@@ -368,7 +385,7 @@ def enviar_recotizacion(tel, link):
     ]}})
 
 def enviar_novedades(tel, tipo_novedad, herramienta, link_wa, media_id):
-    frase = "Acaban de ingresar nuevos modelos." if tipo_novedad == "Ingresos" else "Pudimos reponer el stock que esperabas."
+    frase = "Acaban de ingresar nuevos modelos." if tipo_novedad == "Nuevo producto" else "Pudimos reponer el stock que esperabas."
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_NOVEDADES, "language": {"code": "es"}, "components": [
