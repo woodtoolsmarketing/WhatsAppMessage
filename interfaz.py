@@ -676,10 +676,18 @@ class WoodToolsApp:
             
             link = mainCode.generar_link_whatsapp(tel_v, tipo, d_extra)
             
-            # --- AGREGAR ESTAS DOS LÍNEAS NUEVAS ACÁ ---
+            # --- AVISO AL SERVIDOR CON TIPO DE CAMPAÑA ---
             url_render = f"{URL_SERVIDOR_RENDER}/asignar_vendedor"
-            try: requests.post(url_render, json={"cliente": row['Telefonos_Validos'][0], "vendedor_tel": tel_v}, timeout=3)
-            except: pass
+            try: 
+                requests.post(url_render, json={
+                    "cliente": row['Telefonos_Validos'][0], 
+                    "vendedor_tel": tel_v,
+                    "tipo_campana": tipo,
+                    "subtipo": params.get('subtipo_novedad', '')
+                }, timeout=15)
+            except Exception as e: 
+                print(f"Error avisando a Render: {e}")
+                pass
             # ------------------------------------------
 
             for t in row['Telefonos_Validos']:
