@@ -752,7 +752,8 @@ class WoodToolsApp:
         frame_tabla = tk.Frame(vent_rendimiento)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
-        columnas = ("Estado", "Fecha", "Campaña", "Intentos (PC)", "Entregados (Nube)", "Leídos", "Open Rate", "Click Rate")
+        # ACA ESTÁ EL CAMBIO DE NOMBRE A LA COLUMNA DE LA DERECHA
+        columnas = ("Estado", "Fecha", "Campaña", "Intentos (PC)", "Entregados (Nube)", "Leídos", "Open Rate", "Tasa de Rta.")
         tree_rendimiento = ttk.Treeview(frame_tabla, columns=columnas, show="headings", height=15)
         
         anchos = [80, 100, 200, 100, 120, 80, 100, 100]
