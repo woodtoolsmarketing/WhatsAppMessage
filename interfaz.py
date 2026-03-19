@@ -19,7 +19,6 @@ import mainCode
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 # ==========================================
 
-# Definición del color corporativo oficial de WoodTools
 COLOR_ROJO_WT = "#a41e22" 
 COLOR_PANELES = "#f5f5f5"
 
@@ -35,19 +34,13 @@ class WoodToolsApp:
         self.root = root
         self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM")
         self.root.geometry("1500x900") 
-        
-        # PANTALLA COMPLETA AL INICIAR
         self.root.state('zoomed') 
-        
         self.root.configure(bg=COLOR_ROJO_WT) 
         self.cancelar_envio = False
         self.tipo_base_actual = "clientes" 
         
         mainCode.inicializar_db()
         
-        # ==========================================
-        # BARRA DE MENÚ SUPERIOR
-        # ==========================================
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
         
@@ -74,9 +67,6 @@ class WoodToolsApp:
         self.df_filtrado = pd.DataFrame()
         self.ruta_imagen_seleccionada = None
         
-        # ==========================================
-        # 1. CABECERA (Márgenes ajustados)
-        # ==========================================
         frame_top = tk.Frame(root, pady=5, padx=10, bg=COLOR_ROJO_WT)
         frame_top.pack(fill="x")
         self.cargar_logo_con_ovalo(frame_top)
@@ -93,9 +83,6 @@ class WoodToolsApp:
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
-        # ==========================================
-        # 2. ÁREA DE FILTROS (Más compacto)
-        # ==========================================
         frame_filtros = tk.LabelFrame(root, text="Filtros", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")) 
         frame_filtros.pack(fill="x", padx=20, pady=2)
         
@@ -118,9 +105,6 @@ class WoodToolsApp:
         self.lbl_conteo = tk.Label(frame_filtros, text="Regs: 0", font=("Segoe UI", 10, "bold"), fg="#2196F3", bg=COLOR_PANELES)
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
-        # ==========================================
-        # 3. CONFIGURACIÓN DEL MENSAJE (Mucho más chato)
-        # ==========================================
         frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
         frame_campana.pack(fill="x", padx=20, pady=2)
 
@@ -132,7 +116,6 @@ class WoodToolsApp:
 
         tk.Label(frame_campana, text="Enviar como:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", padx=10)
         
-        # --- EL COMBOBOX INICIA CON EL FILTRO POR DEFECTO ---
         opciones_vendedores_base = ["AUTOMÁTICO (Según Planilla)", "Emmanuel", "Carlos", "Valentín", "Ariel"]
         self.combo_vendedor = ttk.Combobox(frame_campana, values=opciones_vendedores_base, state="readonly", width=25)
         self.combo_vendedor.grid(row=1, column=1, padx=10, pady=2, sticky="n")
@@ -175,8 +158,6 @@ class WoodToolsApp:
         # ==========================================
         # 4. BOTONES DE ACCIÓN Y TABLAS
         # ==========================================
-        
-        # Panel de botones comprimido
         frame_accion = tk.LabelFrame(root, text="Panel de Control", pady=5, padx=20, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"), relief="groove", bd=2)
         frame_accion.pack(fill="x", side="bottom", padx=20, pady=5)
         
@@ -210,14 +191,10 @@ class WoodToolsApp:
         scroll = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scroll.set); scroll.pack(side="right", fill="y"); self.tree.pack(fill="both", expand=True)
 
-    # ==========================================
-    # FUNCIONES DE INTERFAZ Y PREVIEW 
-    # ==========================================
     def cargar_logo_con_ovalo(self, parent):
         ruta_1 = obtener_ruta_interna(r"Imagenes\logo.png")
         ruta_2 = obtener_ruta_interna("logo.png")
         ruta_final = ruta_1 if os.path.exists(ruta_1) else ruta_2
-        
         if os.path.exists(ruta_final):
             try:
                 img_pil = Image.open(ruta_final)
@@ -226,17 +203,13 @@ class WoodToolsApp:
                 new_w = int((h_deseado/h)*w)
                 img_resized = img_pil.resize((new_w, h_deseado), Image.Resampling.LANCZOS)
                 self.logo_img = ImageTk.PhotoImage(img_resized)
-                
                 ovalo_w = new_w + 30 
                 ovalo_h = h_deseado + 10 
-                
                 canvas = tk.Canvas(parent, width=ovalo_w, height=ovalo_h, bg=COLOR_ROJO_WT, highlightthickness=0)
                 canvas.pack(side=tk.RIGHT, padx=15)
-
                 canvas.create_oval(2, 2, ovalo_w-2, ovalo_h-2, fill=COLOR_PANELES, outline=COLOR_PANELES)
                 canvas.create_image(ovalo_w/2, ovalo_h/2, image=self.logo_img)
-            except Exception as e: 
-                print(f"Error cargando logo: {e}")
+            except Exception as e: print(f"Error cargando logo: {e}")
 
     def verificar_observados(self):
         msg = mainCode.revisar_numeros_problematicos()
@@ -256,11 +229,11 @@ class WoodToolsApp:
                 herramienta_ej = df_ok.iloc[0].get('Fav_Temp', herramienta_ej)
 
         if tipo == "Promociones":
-            preview = f"Hola {nombre_ej} 👋 Tenemos descuentos exclusivos. ¡Hablanos acá! 👉 [Link de WhatsApp] por más información"
+            # --- NUEVA PLANTILLA DE PROMOCIONES ---
+            preview = f"[📷 IMAGEN]\nHola {nombre_ej} 👋 Te contactamos para contarte que tenemos promociones en sierras circulares para seccionadora y escuadradora. ¡Contactanos acá 👉 [Link de WhatsApp] por más información!"
         elif tipo == "Rescate (Te extrañamos)":
             preview = f"[📷 IMAGEN]\n¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej} para tu taller. Entrá a este link para más información 👉 [Link de WhatsApp] ¡Saludos!"
         elif tipo == "Gira Vendedor":
-            # --- ACÁ LEE AL VENDEDOR DESDE EL MENÚ PRINCIPAL Y PONE EL NOMBRE COMPLETO ---
             v_corto = self.combo_vendedor.get()
             nombres_completos = {
                 "Alan": "Alan Calvi", "Ezequiel": "Ezequiel Calvi", 
@@ -268,6 +241,9 @@ class WoodToolsApp:
                 "Roberto": "Roberto Golik", "Ariel": "Ariel Sosa"
             }
             vend = nombres_completos.get(v_corto, v_corto)
+            if v_corto == "AUTOMÁTICO (Según Planilla)":
+                vend = "[Vendedor]"
+                
             preview = f"¡Hola! Te avisamos que el vendedor {vend} estará visitando clientes por tu zona. Entrá a este link para coordinar la visita 👉 [Link de WhatsApp] ¡Nos vemos!"
         elif tipo == "Novedades":
             her = self.combo_novedad_herramienta.get() or "[Herramienta]"
@@ -285,7 +261,7 @@ class WoodToolsApp:
     def actualizar_inputs_dinamicos(self, e=None):
         tipo = self.tipo_mensaje_var.get()
         
-        # --- LÓGICA DINÁMICA DEL MENÚ "ENVIAR COMO" ---
+        # --- LÓGICA DINÁMICA DEL MENÚ "ENVIAR COMO" SEGÚN EL TIPO DE MENSAJE ---
         if tipo in ["Promociones", "Rescate (Te extrañamos)", "Personalizado", "Novedades"]:
             opciones = ["AUTOMÁTICO (Según Planilla)", "Emmanuel", "Carlos", "Valentín", "Ariel"]
         elif tipo == "Recotización":
@@ -293,11 +269,12 @@ class WoodToolsApp:
         elif tipo == "Gira Vendedor":
             opciones = ["Ariel", "Alan", "Nicolas", "Ezequiel", "Roberto", "Luis"]
         else:
-            opciones = ["AUTOMÁTICO (Según Planilla)", "Valentín", "Carlos", "Emmanuel", "Ariel"]
+            opciones = ["AUTOMÁTICO (Según Planilla)", "Emmanuel", "Carlos", "Valentín", "Ariel"]
             
         self.combo_vendedor['values'] = opciones
         if self.combo_vendedor.get() not in opciones:
             self.combo_vendedor.current(0)
+        # ------------------------------------------------------------------------
             
         for w in self.frame_dinamico.winfo_children():
             w.pack_forget()
@@ -325,7 +302,7 @@ class WoodToolsApp:
 
         ttk.Separator(self.frame_dinamico, orient='horizontal').pack(fill='x', pady=5)
         
-        tipos_con_imagen = ["Rescate (Te extrañamos)", "Novedades", "Personalizado"]
+        tipos_con_imagen = ["Promociones", "Rescate (Te extrañamos)", "Novedades", "Personalizado"]
         
         if tipo in tipos_con_imagen:
             self.btn_subir_imagen.config(text="📂 Adjuntar Imagen (Obligatoria)")
@@ -656,7 +633,7 @@ class WoodToolsApp:
         if df_ok.empty: return messagebox.showwarning("Error", "No hay destinatarios válidos en la lista actual.")
         
         tipo = self.tipo_mensaje_var.get()
-        tipos_con_imagen = ["Rescate (Te extrañamos)", "Novedades", "Personalizado"]
+        tipos_con_imagen = ["Promociones", "Rescate (Te extrañamos)", "Novedades", "Personalizado"]
 
         if tipo in tipos_con_imagen:
             if not self.ruta_imagen_seleccionada: 
@@ -753,7 +730,7 @@ class WoodToolsApp:
                 if self.cancelar_envio: break
                 res = False; tipo_error = ""
                 
-                if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], link)
+                if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], link, media_id)
                 elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link, media_id)
                 elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), link, media_id)
                 elif tipo == "Gira Vendedor": res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), link)
