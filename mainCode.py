@@ -346,15 +346,17 @@ def subir_imagen_whatsapp(ruta):
 # ==========================================
 # FUNCIONES DE ENVÍO DE PLANTILLAS
 # ==========================================
-def enviar_promocion(tel, nombre, link): 
+def enviar_promocion(tel, nombre, link, media_id): 
+    # AHORA LLEVA IMAGEN EN HEADER, Y 2 VARIABLES (Nombre, Link) EN EL BODY
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [{
-                "type": "body", "parameters": [
+            "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [
+                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+                {"type": "body", "parameters": [
                     {"type": "text", "parameter_name": "1", "text": str(nombre)}, 
                     {"type": "text", "parameter_name": "2", "text": str(link)}
-                ]
-            }]
+                ]}
+            ]
         }
     })
 
