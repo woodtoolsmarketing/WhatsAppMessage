@@ -76,7 +76,6 @@ class WoodToolsApp:
         btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
         
-        # --- NUEVO BOTÓN DE CHATS ABANDONADOS ---
         btn_derivados = tk.Button(frame_top, text="💬 Chats Abandonados", command=self.abrir_chats_derivados, bg="#9C27B0", fg="white", font=("Segoe UI", 10, "bold"))
         btn_derivados.pack(side=tk.LEFT, padx=10)
         
@@ -246,7 +245,6 @@ class WoodToolsApp:
             btn_resuelto.config(state="disabled")
 
         for d in datos_chats:
-            # Buscar el nombre del vendedor por su número
             nombre_vendedor = d['vendedor']
             for nombre, numeros in mainCode.DB_VENDEDORES.items():
                 if d['vendedor'] in numeros: nombre_vendedor = nombre; break
@@ -268,7 +266,6 @@ class WoodToolsApp:
             for msg in chat_data['historial']:
                 role = "🤖 BOT" if msg['role'] == 'model' else "👤 CLIENTE"
                 text = msg['parts'][0]
-                # Ocultamos el prompt feo de configuración
                 if "Eres el asistente virtual" in text: continue
                 txt_chat.insert(tk.END, f"{role}:\n{text}\n\n")
                 
@@ -530,9 +527,6 @@ class WoodToolsApp:
             lbl_editar.pack(side="left", padx=5)
             lbl_editar.bind("<Button-1>", lambda e, t=tel, v=es_val: self.editar_numero(t, v))
 
-    # ==========================================
-    # SELECTOR DE BASES DINÁMICO
-    # ==========================================
     def abrir_selector_bases(self):
         vent_selector = tk.Toplevel(self.root)
         vent_selector.title("Selector de Bases de Datos")
@@ -632,7 +626,7 @@ class WoodToolsApp:
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
 
     # ==========================================
-    # LÓGICA DE EXPORTACIÓN CON LOGO FINAL
+    # LÓGICA DE EXPORTACIÓN Y REPORTES EXCEL
     # ==========================================
     def abrir_ventana_exportacion(self):
         tandas_disponibles = mainCode.obtener_tandas_campanas()
@@ -666,25 +660,69 @@ class WoodToolsApp:
     def _ejecutar_exportacion_filtrada(self, ventana):
         tandas_elegidas = [t_id for t_id, var in self.check_vars.items() if var.get()]
         if not tandas_elegidas: return messagebox.showwarning("Atención", "Debes dejar seleccionada al menos una campaña para exportar.")
+        
         df_historico = mainCode.obtener_datos_reporte_por_tandas(tandas_elegidas)
         if df_historico.empty: return messagebox.showerror("Error", "No se encontraron datos.")
+        
+        # --- NUEVA MAGIA: Buscamos los datos exactos en la nube ---
+        try:
+            res_tracking = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/tracking_general", timeout=10)
+            tracking_data = res_tracking.json() if res_tracking.status_code == 200 else {}
+        except:
+            tracking_data = {}
+
         datos_para_excel = []
         for t_id in reversed(tandas_elegidas):
             df_tanda = df_historico[df_historico['tanda_id'] == t_id]
             if df_tanda.empty: continue
-            primer_registro = df_tanda.iloc[0]; tipo_campana = primer_registro['tipo_campana'].upper(); num_vend = primer_registro['vendedor_asignado']; fecha_campana = primer_registro['fecha_hora'][:10]
+            
+            primer_registro = df_tanda.iloc[0]
+            tipo_campana = primer_registro['tipo_campana'].upper()
+            num_vend = primer_registro['vendedor_asignado']
+            fecha_campana = primer_registro['fecha_hora'][:10]
+            
             nombre_vend = "VARIOS"
             for nombre, numeros in mainCode.DB_VENDEDORES.items():
                 if num_vend in numeros: nombre_vend = nombre.upper(); break
-            datos_para_excel.append({"Fecha y Hora": f"CAMPAÑA DEL DÍA [{fecha_campana}] - {tipo_campana} DE {nombre_vend}", "Cliente": "-------------------------", "Teléfono": "-------------------------", "Vendedor Asignado": "-------------------------", "Tipo de Campaña": "-------------------------", "Herramienta": "-------------------------", "Estado de Envío": "-------------------------"})
+                
+            datos_para_excel.append({
+                "Fecha y Hora": f"CAMPAÑA [{fecha_campana}]", 
+                "Cliente": f"{tipo_campana} DE {nombre_vend}", 
+                "Teléfono": "------------------", 
+                "Vendedor Asignado": "------------------", 
+                "Tipo de Campaña": "------------------", 
+                "Herramienta": "------------------", 
+                "Estado Final de Meta": "------------------"
+            })
+            
             for _, row in df_tanda.iterrows():
-                datos_para_excel.append({"Fecha y Hora": row['fecha_hora'], "Cliente": row['cliente'], "Teléfono": row['telefono'], "Vendedor Asignado": row['vendedor_asignado'], "Tipo de Campaña": row['tipo_campana'], "Herramienta": row.get('herramienta', ''), "Estado de Envío": row['estado_envio']})
+                # Cruzamos los datos locales con la nube
+                tel_limpio = ''.join(filter(str.isdigit, str(row['telefono'])))
+                tel_10 = tel_limpio[-10:] if len(tel_limpio) >= 10 else tel_limpio
+                estado_local = row['estado_envio']
+                estado_nube = tracking_data.get(t_id, {}).get(tel_10, None)
+
+                if estado_nube == 'responded': estado_final = "Respondido por el cliente 💬"
+                elif estado_nube == 'read': estado_final = "Leído (Doble tilde azul) 🟦"
+                elif estado_nube == 'delivered': estado_final = "Entregado (Doble tilde gris) ⬜"
+                else: estado_final = estado_local 
+
+                datos_para_excel.append({
+                    "Fecha y Hora": row['fecha_hora'], 
+                    "Cliente": row['cliente'], 
+                    "Teléfono": row['telefono'], 
+                    "Vendedor Asignado": row['vendedor_asignado'], 
+                    "Tipo de Campaña": row['tipo_campana'], 
+                    "Herramienta": row.get('herramienta', ''), 
+                    "Estado Final de Meta": estado_final
+                })
+                
         df_final = pd.DataFrame(datos_para_excel)
         try:
             ruta_base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
             carpeta_reportes = os.path.join(ruta_base, "Reportes campañas")
             if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
-            ruta_final = os.path.join(carpeta_reportes, f"Reporte_Campanas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+            ruta_final = os.path.join(carpeta_reportes, f"Reporte_Campanas_Detallado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
             
             writer = pd.ExcelWriter(ruta_final, engine='xlsxwriter')
             df_final.to_excel(writer, index=False, sheet_name='Log_Campañas')
@@ -693,7 +731,7 @@ class WoodToolsApp:
             worksheet = writer.sheets['Log_Campañas']
             
             worksheet.set_column('A:A', 30)
-            worksheet.set_column('B:G', 20)
+            worksheet.set_column('B:G', 25)
             
             ruta_logo = obtener_ruta_interna(r"Imagenes\logo.png")
             if not os.path.exists(ruta_logo): 
@@ -714,9 +752,6 @@ class WoodToolsApp:
             ventana.destroy()
         except Exception as e: messagebox.showerror("Error", f"No se pudo guardar el archivo Excel: {e}")
 
-    # ==========================================
-    # LÓGICA DE CANCELACIÓN Y ENVÍO MASIVO
-    # ==========================================
     def comando_cancelar_envio(self):
         self.cancelar_envio = True
         self.btn_cancelar.config(state="disabled", text="Cancelando...")
@@ -877,6 +912,13 @@ class WoodToolsApp:
         
         tk.Label(frame_header, text="📊 Panel de Rendimiento Histórico", font=("Segoe UI", 16, "bold"), bg=COLOR_PANELES, fg=COLOR_ROJO_WT).pack(side="left")
         
+        btn_recargar = tk.Button(frame_header, text="🔄 Recargar Nube", command=lambda: cargar_datos_rendimiento(), bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
+        btn_recargar.pack(side="right")
+
+        # --- BOTÓN PARA EXPORTAR EL RESUMEN GENERAL A EXCEL ---
+        btn_exportar_dash = tk.Button(frame_header, text="📥 Exportar Resumen a Excel", command=lambda: self.exportar_dashboard_excel(tree_rendimiento), bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
+        btn_exportar_dash.pack(side="right", padx=10)
+
         frame_tabla = tk.Frame(vent_rendimiento)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
@@ -938,10 +980,32 @@ class WoodToolsApp:
                     open_rate, click_rate
                 ))
 
-        btn_recargar = tk.Button(frame_header, text="🔄 Recargar Nube", command=cargar_datos_rendimiento, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
-        btn_recargar.pack(side="right")
-
         cargar_datos_rendimiento()
+
+    def exportar_dashboard_excel(self, tree):
+        items = tree.get_children()
+        if not items:
+            return messagebox.showinfo("Aviso", "No hay datos para exportar.")
+            
+        datos = []
+        for item in items:
+            valores = tree.item(item)['values']
+            if valores[0] == "---": continue
+            datos.append({
+                "Estado": valores[0], "Fecha": valores[1], "Campaña": valores[2],
+                "Intentos (PC)": valores[3], "Entregados (Nube)": valores[4],
+                "Leídos": valores[5], "Open Rate": valores[6], "Tasa de Respuesta": valores[7]
+            })
+            
+        df = pd.DataFrame(datos)
+        ruta_base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        carpeta_reportes = os.path.join(ruta_base, "Reportes campañas")
+        if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
+        ruta_final = os.path.join(carpeta_reportes, f"Resumen_Global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        df.to_excel(ruta_final, index=False)
+        os.startfile(carpeta_reportes)
+        messagebox.showinfo("Éxito", f"Resumen global exportado en:\n{ruta_final}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()

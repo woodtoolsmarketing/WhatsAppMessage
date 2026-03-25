@@ -20,7 +20,6 @@ VERSION = "v17.0"
 BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 
 NOMBRE_HOJA = "Base de datos wt"
-# --- CAMBIO CRUCIAL: Ahora pedimos permiso de EDICIÓN, no solo lectura ---
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
 # ==========================================
