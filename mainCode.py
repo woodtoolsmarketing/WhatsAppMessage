@@ -145,7 +145,7 @@ def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
 
 def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     if tipo_mensaje == "Promociones": 
-        texto = "Hola, me llegó el mensaje con la promoción y quiero aprovechar el descuento. ¿Me pasan más información?"
+        texto = "Hola, me llegó el mensaje con la promoción de las sierras circulares y quiero más información."
     elif tipo_mensaje == "Rescate (Te extrañamos)": 
         texto = "Hola, me llegó el mensaje de WhatsApp. Me gustaría ver el catálogo actualizado para reponer stock en mi taller."
     elif tipo_mensaje == "Gira Vendedor": 
@@ -160,7 +160,9 @@ def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
         texto = "Hola, me contacto para realizar una consulta."
         
     msg_codificado = urllib.parse.quote(texto)
-    return f"https://wa.me/{tel}?text={msg_codificado}"
+    
+    # --- CAMBIO CLAVE: Usamos api.whatsapp.com para evitar el bug del texto duplicado en PC ---
+    return f"https://api.whatsapp.com/send?phone={tel}&text={msg_codificado}"
 
 # ==========================================
 # LECTOR DESDE GOOGLE SHEETS Y RENOVACIÓN DE TOKEN
