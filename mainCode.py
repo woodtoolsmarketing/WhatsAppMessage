@@ -14,14 +14,14 @@ from google.auth.transport.requests import Request
 # ==========================================
 # CONFIGURACIÓN DE LA API DE WHATSAPP Y SHEETS
 # ==========================================
-# ¡PONÉ TU TOKEN LARGO Y TU ID DE NÚMERO ACÁ!
 CLOUD_API_TOKEN = "EAAUkLctR4q0BQ8mcvr7YtqEacloCMCDHq1AY8VE0gc0ZBIIZBboTSCSEIEOQQKbNtfD7i0HwqiJvnd9FZCdH27rlBVsOXer1Qmlx3N5GAMhO6FmRNmYwOuxCKcJAgqo9Xy8IwtiQcZCFcuJ2fIMQnO7mPvBjEYrAgCDs7eMyn1lZAT7aDaJ8SKG5I1cp7yAZDZD"
 PHONE_NUMBER_ID = "1041050652417644"
 VERSION = "v17.0"
 BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 
 NOMBRE_HOJA = "Base de datos wt"
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/drive.readonly']
+# --- CAMBIO CRUCIAL: Ahora pedimos permiso de EDICIÓN, no solo lectura ---
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
 # ==========================================
 # LÓGICA DE RUTAS Y BASE DE DATOS LOCAL
@@ -145,7 +145,8 @@ def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
 
 def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
     if tipo_mensaje == "Promociones": 
-        texto = "Hola, me llegó el mensaje con la promoción de las sierras circulares y quiero más información."
+        producto = datos_extra.get('herramienta', 'sierras circulares')
+        texto = f"Hola, me llegó el mensaje con la promoción de {producto} y quiero más información."
     elif tipo_mensaje == "Rescate (Te extrañamos)": 
         texto = "Hola, me llegó el mensaje de WhatsApp. Me gustaría ver el catálogo actualizado para reponer stock en mi taller."
     elif tipo_mensaje == "Gira Vendedor": 
@@ -160,8 +161,6 @@ def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
         texto = "Hola, me contacto para realizar una consulta."
         
     msg_codificado = urllib.parse.quote(texto)
-    
-    # --- CAMBIO CLAVE: Usamos api.whatsapp.com para evitar el bug del texto duplicado en PC ---
     return f"https://api.whatsapp.com/send?phone={tel}&text={msg_codificado}"
 
 # ==========================================
@@ -222,7 +221,7 @@ def leer_desde_google_sheets(nombre_pestana=""):
         headers = [h.strip() if h.strip() != "" else f"Col_Vacia_{i}" for i, h in enumerate(headers_brutos)]
         
         es_formato_complejo = 'Primer número' in headers
-        data = datos_brutos[2:] if (es_formato_complejo and len(datos_brutos)>2) else (datos_brutos[1:] if len(datos_brutos)>1 else [])
+        data = datos_brutos[1:] if len(datos_brutos) > 1 else []
         
         df = pd.DataFrame(data, columns=headers)
         df = df.fillna("")
@@ -245,14 +244,15 @@ def leer_desde_google_sheets(nombre_pestana=""):
                     if not num_only.startswith("000") and num_only: tels_raw.append(num_raw_limpio)
                 cliente_nom = str(row.get('Cliente', row.get('Nombres', row.get('Nombre', 'Sin Nombre')))).strip() or "Sin Nombre"
             
-            registros.append({
-                'Número de cliente': aplicar_correcciones_texto(row.get('Número de cliente', '')),
-                'Cliente': cliente_nom,
-                'Zona': aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0'))) or '0',
-                'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
-                'Telefonos_Raw': tels_raw,
-                'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip()
-            })
+            if cliente_nom != "Sin Nombre" and cliente_nom != "Cliente Sin Nombre":
+                registros.append({
+                    'Número de cliente': aplicar_correcciones_texto(row.get('Número de cliente', '')),
+                    'Cliente': cliente_nom,
+                    'Zona': aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0'))) or '0',
+                    'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
+                    'Telefonos_Raw': tels_raw,
+                    'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip()
+                })
         return registros
     except Exception: return []
 
@@ -348,15 +348,15 @@ def subir_imagen_whatsapp(ruta):
 # ==========================================
 # FUNCIONES DE ENVÍO DE PLANTILLAS
 # ==========================================
-def enviar_promocion(tel, nombre, link, media_id): 
-    # AHORA LLEVA IMAGEN EN HEADER, Y 2 VARIABLES (Nombre, Link) EN EL BODY
+def enviar_promocion(tel, nombre, producto_promo, link, media_id): 
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [
                 {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
                 {"type": "body", "parameters": [
                     {"type": "text", "parameter_name": "1", "text": str(nombre)}, 
-                    {"type": "text", "parameter_name": "2", "text": str(link)}
+                    {"type": "text", "parameter_name": "2", "text": str(producto_promo)}, 
+                    {"type": "text", "parameter_name": "3", "text": str(link)}
                 ]}
             ]
         }
