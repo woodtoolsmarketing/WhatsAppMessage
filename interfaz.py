@@ -9,16 +9,12 @@ import time
 import ctypes  
 import urllib.parse
 import requests  
+import json
 from datetime import datetime
 
-# --- IMPORTAMOS TU BACKEND (Google Sheets) ---
 import mainCode 
 
-# ==========================================
-# ⚠️ TU LINK DE RENDER ACA (Sin el /webhook al final) ⚠️
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
-# ==========================================
-
 COLOR_ROJO_WT = "#a41e22" 
 COLOR_PANELES = "#f5f5f5"
 
@@ -79,6 +75,9 @@ class WoodToolsApp:
         
         btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
+        
+        btn_derivados = tk.Button(frame_top, text="💬 Chats Abandonados", command=self.abrir_chats_derivados, bg="#9C27B0", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_derivados.pack(side=tk.LEFT, padx=10)
         
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
@@ -155,9 +154,6 @@ class WoodToolsApp:
 
         self.actualizar_inputs_dinamicos() 
 
-        # ==========================================
-        # 4. BOTONES DE ACCIÓN Y TABLAS
-        # ==========================================
         frame_accion = tk.LabelFrame(root, text="Panel de Control", pady=5, padx=20, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"), relief="groove", bd=2)
         frame_accion.pack(fill="x", side="bottom", padx=20, pady=5)
         
@@ -211,10 +207,106 @@ class WoodToolsApp:
                 canvas.create_image(ovalo_w/2, ovalo_h/2, image=self.logo_img)
             except Exception as e: print(f"Error cargando logo: {e}")
 
-    def verificar_observados(self):
-        msg = mainCode.revisar_numeros_problematicos()
+    # ==========================================
+    # PANTALLA DE CHATS ABANDONADOS
+    # ==========================================
+    def abrir_chats_derivados(self):
         vent = tk.Toplevel(self.root)
-        vent.title("Descartados"); vent.geometry("500x400")
+        vent.title("Chats Abandonados / Requieren Atención")
+        vent.geometry("900x600")
+        vent.configure(bg=COLOR_PANELES)
+
+        frame_izq = tk.Frame(vent, width=300, bg=COLOR_PANELES)
+        frame_izq.pack(side="left", fill="y", padx=10, pady=10)
+
+        frame_der = tk.Frame(vent, bg=COLOR_PANELES)
+        frame_der.pack(side="right", fill="both", expand=True, padx=10, pady=10)
+
+        tk.Label(frame_izq, text="Lista de Clientes", bg=COLOR_PANELES, font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        lista_chats = tk.Listbox(frame_izq, font=("Arial", 11))
+        lista_chats.pack(fill="both", expand=True, pady=5)
+
+        tk.Label(frame_der, text="Historial del Chat", bg=COLOR_PANELES, font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        txt_chat = tk.Text(frame_der, font=("Arial", 11), wrap="word", state="disabled")
+        txt_chat.pack(fill="both", expand=True, pady=(0, 10))
+
+        btn_resuelto = tk.Button(frame_der, text="✅ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("bold", 11))
+        btn_resuelto.pack(fill="x")
+
+        try:
+            res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados", timeout=10)
+            datos_chats = res.json() if res.status_code == 200 else []
+        except:
+            datos_chats = []
+            messagebox.showerror("Error", "No se pudo conectar con el servidor para traer los chats.")
+
+        if not datos_chats:
+            lista_chats.insert(tk.END, "✅ No hay chats abandonados.")
+            btn_resuelto.config(state="disabled")
+
+        for d in datos_chats:
+            nombre_vendedor = d['vendedor']
+            for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                if d['vendedor'] in numeros: nombre_vendedor = nombre; break
+            lista_chats.insert(tk.END, f"+{d['telefono']} ({nombre_vendedor})")
+
+        def mostrar_chat(evt):
+            sel = lista_chats.curselection()
+            if not sel or not datos_chats: return
+            idx = sel[0]
+            chat_data = datos_chats[idx]
+            
+            txt_chat.config(state="normal")
+            txt_chat.delete("1.0", tk.END)
+            
+            txt_chat.insert(tk.END, f"📱 Cliente: +{chat_data['telefono']}\n")
+            txt_chat.insert(tk.END, f"📅 Fecha de derivación: {chat_data['fecha']}\n")
+            txt_chat.insert(tk.END, "-"*50 + "\n\n")
+            
+            for msg in chat_data['historial']:
+                role = "🤖 BOT" if msg['role'] == 'model' else "👤 CLIENTE"
+                text = msg['parts'][0]
+                if "Eres el asistente virtual" in text: continue
+                txt_chat.insert(tk.END, f"{role}:\n{text}\n\n")
+                
+            txt_chat.config(state="disabled")
+
+        lista_chats.bind("<<ListboxSelect>>", mostrar_chat)
+
+        def marcar_resuelto():
+            sel = lista_chats.curselection()
+            if not sel or not datos_chats: return
+            idx = sel[0]
+            tel = datos_chats[idx]['telefono']
+            try:
+                requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados/{tel}")
+                lista_chats.delete(idx)
+                datos_chats.pop(idx)
+                txt_chat.config(state="normal")
+                txt_chat.delete("1.0", tk.END)
+                txt_chat.config(state="disabled")
+                messagebox.showinfo("Éxito", "El chat fue marcado como resuelto y eliminado de la lista.")
+            except:
+                messagebox.showerror("Error", "No se pudo borrar el chat de la base de datos.")
+
+        btn_resuelto.config(command=marcar_resuelto)
+
+
+    def verificar_observados(self):
+        if self.df_filtrado.empty:
+            msg = "✅ No hay datos cargados."
+        else:
+            df_descartados = self.df_filtrado[self.df_filtrado['Es_Valido'] == False]
+            if df_descartados.empty:
+                msg = "✅ No hay números descartados en la lista actual filtrada."
+            else:
+                msg = f"--- {len(df_descartados)} DESCARTADOS (En este filtro) ---\n\n"
+                for _, row in df_descartados.iterrows():
+                    tels = row.get('Telefonos_Raw', [])
+                    msg += f"• {row['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
+        
+        vent = tk.Toplevel(self.root)
+        vent.title("Descartados (Filtrados)"); vent.geometry("500x400")
         t = tk.Text(vent, wrap="word", padx=10, pady=10); t.pack(fill="both", expand=True)
         t.insert("1.0", msg); t.config(state="disabled")
 
@@ -229,8 +321,8 @@ class WoodToolsApp:
                 herramienta_ej = df_ok.iloc[0].get('Fav_Temp', herramienta_ej)
 
         if tipo == "Promociones":
-            # --- NUEVA PLANTILLA DE PROMOCIONES ---
-            preview = f"[📷 IMAGEN]\nHola {nombre_ej} 👋 Te contactamos para contarte que tenemos promociones en sierras circulares para seccionadora y escuadradora. ¡Contactanos acá 👉 [Link de WhatsApp] por más información!"
+            prod_promo = self.entry_dinamico_texto.get().strip() or "sierras circulares para seccionadora y escuadradora"
+            preview = f"[📷 IMAGEN]\nHola {nombre_ej} 👋 Te contactamos para contarte que tenemos promociones en {prod_promo}. ¡Contactanos acá 👉 [Link de WhatsApp] por más información!"
         elif tipo == "Rescate (Te extrañamos)":
             preview = f"[📷 IMAGEN]\n¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej} para tu taller. Entrá a este link para más información 👉 [Link de WhatsApp] ¡Saludos!"
         elif tipo == "Gira Vendedor":
@@ -261,7 +353,6 @@ class WoodToolsApp:
     def actualizar_inputs_dinamicos(self, e=None):
         tipo = self.tipo_mensaje_var.get()
         
-        # --- LÓGICA DINÁMICA DEL MENÚ "ENVIAR COMO" SEGÚN EL TIPO DE MENSAJE ---
         if tipo in ["Promociones", "Rescate (Te extrañamos)", "Personalizado", "Novedades"]:
             opciones = ["AUTOMÁTICO (Según Planilla)", "Emmanuel", "Carlos", "Valentín", "Ariel"]
         elif tipo == "Recotización":
@@ -274,7 +365,6 @@ class WoodToolsApp:
         self.combo_vendedor['values'] = opciones
         if self.combo_vendedor.get() not in opciones:
             self.combo_vendedor.current(0)
-        # ------------------------------------------------------------------------
             
         for w in self.frame_dinamico.winfo_children():
             w.pack_forget()
@@ -284,7 +374,8 @@ class WoodToolsApp:
         self.lbl_aviso_meta.pack(anchor="w", pady=(0,2))
             
         if tipo == "Promociones":
-            tk.Label(self.frame_dinamico, text="Se enviará automáticamente Nombre y Link.", bg=COLOR_PANELES, fg="blue").pack(anchor="w", pady=2)
+            self.lbl_dinamico_titulo.config(text="Producto a promocionar:"); self.lbl_dinamico_titulo.pack(anchor="w")
+            self.entry_dinamico_texto.pack(anchor="w", pady=2)
         elif tipo == "Gira Vendedor":
             tk.Label(self.frame_dinamico, text="El vendedor se selecciona en 'Enviar como' (arriba).", bg=COLOR_PANELES, fg="blue").pack(anchor="w", pady=2)
         elif tipo == "Personalizado":
@@ -436,9 +527,6 @@ class WoodToolsApp:
             lbl_editar.pack(side="left", padx=5)
             lbl_editar.bind("<Button-1>", lambda e, t=tel, v=es_val: self.editar_numero(t, v))
 
-    # ==========================================
-    # SELECTOR DE BASES DINÁMICO
-    # ==========================================
     def abrir_selector_bases(self):
         vent_selector = tk.Toplevel(self.root)
         vent_selector.title("Selector de Bases de Datos")
@@ -538,7 +626,7 @@ class WoodToolsApp:
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
 
     # ==========================================
-    # LÓGICA DE EXPORTACIÓN CON LOGO FINAL
+    # LÓGICA DE EXPORTACIÓN Y REPORTES EXCEL
     # ==========================================
     def abrir_ventana_exportacion(self):
         tandas_disponibles = mainCode.obtener_tandas_campanas()
@@ -572,25 +660,69 @@ class WoodToolsApp:
     def _ejecutar_exportacion_filtrada(self, ventana):
         tandas_elegidas = [t_id for t_id, var in self.check_vars.items() if var.get()]
         if not tandas_elegidas: return messagebox.showwarning("Atención", "Debes dejar seleccionada al menos una campaña para exportar.")
+        
         df_historico = mainCode.obtener_datos_reporte_por_tandas(tandas_elegidas)
         if df_historico.empty: return messagebox.showerror("Error", "No se encontraron datos.")
+        
+        # --- NUEVA MAGIA: Buscamos los datos exactos en la nube ---
+        try:
+            res_tracking = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/tracking_general", timeout=10)
+            tracking_data = res_tracking.json() if res_tracking.status_code == 200 else {}
+        except:
+            tracking_data = {}
+
         datos_para_excel = []
         for t_id in reversed(tandas_elegidas):
             df_tanda = df_historico[df_historico['tanda_id'] == t_id]
             if df_tanda.empty: continue
-            primer_registro = df_tanda.iloc[0]; tipo_campana = primer_registro['tipo_campana'].upper(); num_vend = primer_registro['vendedor_asignado']; fecha_campana = primer_registro['fecha_hora'][:10]
+            
+            primer_registro = df_tanda.iloc[0]
+            tipo_campana = primer_registro['tipo_campana'].upper()
+            num_vend = primer_registro['vendedor_asignado']
+            fecha_campana = primer_registro['fecha_hora'][:10]
+            
             nombre_vend = "VARIOS"
             for nombre, numeros in mainCode.DB_VENDEDORES.items():
                 if num_vend in numeros: nombre_vend = nombre.upper(); break
-            datos_para_excel.append({"Fecha y Hora": f"CAMPAÑA DEL DÍA [{fecha_campana}] - {tipo_campana} DE {nombre_vend}", "Cliente": "-------------------------", "Teléfono": "-------------------------", "Vendedor Asignado": "-------------------------", "Tipo de Campaña": "-------------------------", "Herramienta": "-------------------------", "Estado de Envío": "-------------------------"})
+                
+            datos_para_excel.append({
+                "Fecha y Hora": f"CAMPAÑA [{fecha_campana}]", 
+                "Cliente": f"{tipo_campana} DE {nombre_vend}", 
+                "Teléfono": "------------------", 
+                "Vendedor Asignado": "------------------", 
+                "Tipo de Campaña": "------------------", 
+                "Herramienta": "------------------", 
+                "Estado Final de Meta": "------------------"
+            })
+            
             for _, row in df_tanda.iterrows():
-                datos_para_excel.append({"Fecha y Hora": row['fecha_hora'], "Cliente": row['cliente'], "Teléfono": row['telefono'], "Vendedor Asignado": row['vendedor_asignado'], "Tipo de Campaña": row['tipo_campana'], "Herramienta": row.get('herramienta', ''), "Estado de Envío": row['estado_envio']})
+                # Cruzamos los datos locales con la nube
+                tel_limpio = ''.join(filter(str.isdigit, str(row['telefono'])))
+                tel_10 = tel_limpio[-10:] if len(tel_limpio) >= 10 else tel_limpio
+                estado_local = row['estado_envio']
+                estado_nube = tracking_data.get(t_id, {}).get(tel_10, None)
+
+                if estado_nube == 'responded': estado_final = "Respondido por el cliente 💬"
+                elif estado_nube == 'read': estado_final = "Leído (Doble tilde azul) 🟦"
+                elif estado_nube == 'delivered': estado_final = "Entregado (Doble tilde gris) ⬜"
+                else: estado_final = estado_local 
+
+                datos_para_excel.append({
+                    "Fecha y Hora": row['fecha_hora'], 
+                    "Cliente": row['cliente'], 
+                    "Teléfono": row['telefono'], 
+                    "Vendedor Asignado": row['vendedor_asignado'], 
+                    "Tipo de Campaña": row['tipo_campana'], 
+                    "Herramienta": row.get('herramienta', ''), 
+                    "Estado Final de Meta": estado_final
+                })
+                
         df_final = pd.DataFrame(datos_para_excel)
         try:
             ruta_base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
             carpeta_reportes = os.path.join(ruta_base, "Reportes campañas")
             if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
-            ruta_final = os.path.join(carpeta_reportes, f"Reporte_Campanas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+            ruta_final = os.path.join(carpeta_reportes, f"Reporte_Campanas_Detallado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
             
             writer = pd.ExcelWriter(ruta_final, engine='xlsxwriter')
             df_final.to_excel(writer, index=False, sheet_name='Log_Campañas')
@@ -599,7 +731,7 @@ class WoodToolsApp:
             worksheet = writer.sheets['Log_Campañas']
             
             worksheet.set_column('A:A', 30)
-            worksheet.set_column('B:G', 20)
+            worksheet.set_column('B:G', 25)
             
             ruta_logo = obtener_ruta_interna(r"Imagenes\logo.png")
             if not os.path.exists(ruta_logo): 
@@ -620,9 +752,6 @@ class WoodToolsApp:
             ventana.destroy()
         except Exception as e: messagebox.showerror("Error", f"No se pudo guardar el archivo Excel: {e}")
 
-    # ==========================================
-    # LÓGICA DE CANCELACIÓN Y ENVÍO MASIVO
-    # ==========================================
     def comando_cancelar_envio(self):
         self.cancelar_envio = True
         self.btn_cancelar.config(state="disabled", text="Cancelando...")
@@ -652,7 +781,10 @@ class WoodToolsApp:
 
         if self.ruta_imagen_seleccionada: params['ruta_imagen'] = self.ruta_imagen_seleccionada
         
-        if tipo == "Novedades":
+        if tipo == "Promociones":
+            if not self.entry_dinamico_texto.get().strip(): return messagebox.showerror("Error", "Falta ingresar el producto a promocionar.")
+            params['herramienta'] = self.entry_dinamico_texto.get().strip()
+        elif tipo == "Novedades":
             her = self.combo_novedad_herramienta.get()
             params['subtipo_novedad'] = self.combo_novedad_subtipo.get()
             params['herramienta_novedad'] = her
@@ -704,7 +836,7 @@ class WoodToolsApp:
                 tel_para_link = tel_v
             else:
                 tel_v = mainCode.obtener_telefono_vendedor(row.get('Vendedor','0'), params.get('preferencia_index', 0)) if params['modo_vendedor'] == "AUTO" else params['tel_fijo']
-                d_extra = {'vendedor_nombre': params.get('texto_extra',''), 'herramienta': params.get('herramienta_novedad',''), 'subtipo': params.get('subtipo_novedad','')}
+                d_extra = {'vendedor_nombre': params.get('texto_extra',''), 'herramienta': params.get('herramienta_novedad','') or params.get('herramienta',''), 'subtipo': params.get('subtipo_novedad','')}
                 tel_para_link = tel_v
                 
                 if tipo == "Gira Vendedor":
@@ -730,7 +862,7 @@ class WoodToolsApp:
                 if self.cancelar_envio: break
                 res = False; tipo_error = ""
                 
-                if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], link, media_id)
+                if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params.get('herramienta', 'sierras circulares'), link, media_id)
                 elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link, media_id)
                 elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), link, media_id)
                 elif tipo == "Gira Vendedor": res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), link)
@@ -780,6 +912,13 @@ class WoodToolsApp:
         
         tk.Label(frame_header, text="📊 Panel de Rendimiento Histórico", font=("Segoe UI", 16, "bold"), bg=COLOR_PANELES, fg=COLOR_ROJO_WT).pack(side="left")
         
+        btn_recargar = tk.Button(frame_header, text="🔄 Recargar Nube", command=lambda: cargar_datos_rendimiento(), bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
+        btn_recargar.pack(side="right")
+
+        # --- BOTÓN PARA EXPORTAR EL RESUMEN GENERAL A EXCEL ---
+        btn_exportar_dash = tk.Button(frame_header, text="📥 Exportar Resumen a Excel", command=lambda: self.exportar_dashboard_excel(tree_rendimiento), bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
+        btn_exportar_dash.pack(side="right", padx=10)
+
         frame_tabla = tk.Frame(vent_rendimiento)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
@@ -841,10 +980,32 @@ class WoodToolsApp:
                     open_rate, click_rate
                 ))
 
-        btn_recargar = tk.Button(frame_header, text="🔄 Recargar Nube", command=cargar_datos_rendimiento, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
-        btn_recargar.pack(side="right")
-
         cargar_datos_rendimiento()
+
+    def exportar_dashboard_excel(self, tree):
+        items = tree.get_children()
+        if not items:
+            return messagebox.showinfo("Aviso", "No hay datos para exportar.")
+            
+        datos = []
+        for item in items:
+            valores = tree.item(item)['values']
+            if valores[0] == "---": continue
+            datos.append({
+                "Estado": valores[0], "Fecha": valores[1], "Campaña": valores[2],
+                "Intentos (PC)": valores[3], "Entregados (Nube)": valores[4],
+                "Leídos": valores[5], "Open Rate": valores[6], "Tasa de Respuesta": valores[7]
+            })
+            
+        df = pd.DataFrame(datos)
+        ruta_base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        carpeta_reportes = os.path.join(ruta_base, "Reportes campañas")
+        if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
+        ruta_final = os.path.join(carpeta_reportes, f"Resumen_Global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        df.to_excel(ruta_final, index=False)
+        os.startfile(carpeta_reportes)
+        messagebox.showinfo("Éxito", f"Resumen global exportado en:\n{ruta_final}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
