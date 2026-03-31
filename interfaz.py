@@ -233,12 +233,20 @@ class WoodToolsApp:
         btn_resuelto = tk.Button(frame_der, text="✅ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("bold", 11))
         btn_resuelto.pack(fill="x")
 
+        # --- MAGIA: Aumentamos el Timeout para esperar que Render despierte (30s) ---
         try:
-            res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados", timeout=10)
-            datos_chats = res.json() if res.status_code == 200 else []
-        except:
+            res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados", timeout=30)
+            if res.status_code == 200:
+                datos_chats = res.json()
+            else:
+                datos_chats = []
+                messagebox.showerror("Error", f"El servidor respondió con código de error {res.status_code}.\nRevisá los logs en Render.", parent=vent)
+        except requests.exceptions.Timeout:
             datos_chats = []
-            messagebox.showerror("Error", "No se pudo conectar con el servidor para traer los chats.")
+            messagebox.showerror("Aviso", "El servidor de Render tardó mucho en responder porque estaba 'durmiendo'.\nPor favor, cerrá esta ventana e intentalo de nuevo en 30 segundos.", parent=vent)
+        except Exception as e:
+            datos_chats = []
+            messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\nDetalle técnico: {str(e)}", parent=vent)
 
         if not datos_chats:
             lista_chats.insert(tk.END, "✅ No hay chats abandonados.")
@@ -285,9 +293,9 @@ class WoodToolsApp:
                 txt_chat.config(state="normal")
                 txt_chat.delete("1.0", tk.END)
                 txt_chat.config(state="disabled")
-                messagebox.showinfo("Éxito", "El chat fue marcado como resuelto y eliminado de la lista.")
-            except:
-                messagebox.showerror("Error", "No se pudo borrar el chat de la base de datos.")
+                messagebox.showinfo("Éxito", "El chat fue marcado como resuelto y eliminado de la lista.", parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo borrar el chat de la base de datos.\nDetalle: {str(e)}", parent=vent)
 
         btn_resuelto.config(command=marcar_resuelto)
 
@@ -625,9 +633,6 @@ class WoodToolsApp:
 
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
 
-    # ==========================================
-    # LÓGICA DE EXPORTACIÓN Y REPORTES EXCEL
-    # ==========================================
     def abrir_ventana_exportacion(self):
         tandas_disponibles = mainCode.obtener_tandas_campanas()
         if not tandas_disponibles: return messagebox.showinfo("Información", "Todavía no hay ninguna campaña guardada en el historial.")
@@ -664,9 +669,8 @@ class WoodToolsApp:
         df_historico = mainCode.obtener_datos_reporte_por_tandas(tandas_elegidas)
         if df_historico.empty: return messagebox.showerror("Error", "No se encontraron datos.")
         
-        # --- NUEVA MAGIA: Buscamos los datos exactos en la nube ---
         try:
-            res_tracking = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/tracking_general", timeout=10)
+            res_tracking = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/tracking_general", timeout=30)
             tracking_data = res_tracking.json() if res_tracking.status_code == 200 else {}
         except:
             tracking_data = {}
@@ -696,7 +700,6 @@ class WoodToolsApp:
             })
             
             for _, row in df_tanda.iterrows():
-                # Cruzamos los datos locales con la nube
                 tel_limpio = ''.join(filter(str.isdigit, str(row['telefono'])))
                 tel_10 = tel_limpio[-10:] if len(tel_limpio) >= 10 else tel_limpio
                 estado_local = row['estado_envio']
@@ -898,9 +901,6 @@ class WoodToolsApp:
             self.root.after(0, lambda: self.lbl_progreso.config(text="Campaña completada", fg="green", bg=COLOR_PANELES))
             self.root.after(0, lambda: messagebox.showinfo("Reporte Final", f"Campaña Finalizada.\n\nEnviados con éxito: {ok}\nErrores: {err}\n\nQuedó registrada en el historial como: {estado_final_tanda}"))
 
-    # ==========================================
-    # PANEL DE RENDIMIENTO Y MÉTRICAS (CONECTADO A LA NUBE)
-    # ==========================================
     def abrir_rendimiento(self):
         vent_rendimiento = tk.Toplevel(self.root)
         vent_rendimiento.title("Rendimiento de Campañas")
@@ -915,7 +915,6 @@ class WoodToolsApp:
         btn_recargar = tk.Button(frame_header, text="🔄 Recargar Nube", command=lambda: cargar_datos_rendimiento(), bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
         btn_recargar.pack(side="right")
 
-        # --- BOTÓN PARA EXPORTAR EL RESUMEN GENERAL A EXCEL ---
         btn_exportar_dash = tk.Button(frame_header, text="📥 Exportar Resumen a Excel", command=lambda: self.exportar_dashboard_excel(tree_rendimiento), bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"), cursor="hand2", padx=10)
         btn_exportar_dash.pack(side="right", padx=10)
 
@@ -949,7 +948,7 @@ class WoodToolsApp:
                 
             datos_nube = {}
             try:
-                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/metricas", timeout=5)
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/metricas", timeout=30)
                 if res.status_code == 200:
                     datos_nube = res.json()
             except Exception as e:
