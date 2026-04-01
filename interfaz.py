@@ -233,7 +233,6 @@ class WoodToolsApp:
         btn_resuelto = tk.Button(frame_der, text="✅ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("bold", 11))
         btn_resuelto.pack(fill="x")
 
-        # --- MAGIA: Aumentamos el Timeout para esperar que Render despierte (30s) ---
         try:
             res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados", timeout=30)
             if res.status_code == 200:
@@ -659,7 +658,7 @@ class WoodToolsApp:
                 if t_vend in numeros: nombre_vendedor = nombre; break
             estado_formateado = f"({t_estado_crudo})" if t_estado_crudo else "(SIN ESTADO)"
             var = tk.BooleanVar(value=True); self.check_vars[t_id] = var
-            ttk.Checkbutton(scrollable_frame, text=f"[{t_fecha[:10]}] {t_tipo} - {nombre_vendedor} ({t_tot} msjs) {estado_formateado}", variable=var).pack(anchor="w", pady=2, padx=15)
+            ttk.Checkbutton(scrollable_frame, text=f"[{t_fecha[:10]}] {t_tipo} - {nombre_vendedor} ({t_tot} msjs)", variable=var).pack(anchor="w", pady=2, padx=15)
         tk.Button(vent_exportar, text="📥 Generar Excel", bg="#4CAF50", fg="white", font=("bold", 11), command=lambda: self._ejecutar_exportacion_filtrada(vent_exportar)).pack(pady=20)
 
     def _ejecutar_exportacion_filtrada(self, ventana):
@@ -705,7 +704,8 @@ class WoodToolsApp:
                 estado_local = row['estado_envio']
                 estado_nube = tracking_data.get(t_id, {}).get(tel_10, None)
 
-                if estado_nube == 'responded': estado_final = "Respondido por el cliente 💬"
+                if estado_nube == 'clicked_link': estado_final = "Derivado al Vendedor 🟢"
+                elif estado_nube == 'responded': estado_final = "Respondido por el cliente 💬"
                 elif estado_nube == 'read': estado_final = "Leído (Doble tilde azul) 🟦"
                 elif estado_nube == 'delivered': estado_final = "Entregado (Doble tilde gris) ⬜"
                 else: estado_final = estado_local 
@@ -764,6 +764,8 @@ class WoodToolsApp:
         df_ok = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
         if df_ok.empty: return messagebox.showwarning("Error", "No hay destinatarios válidos en la lista actual.")
         
+        total_base = len(self.df_filtrado)
+        
         tipo = self.tipo_mensaje_var.get()
         tipos_con_imagen = ["Promociones", "Rescate (Te extrañamos)", "Novedades", "Personalizado"]
 
@@ -814,9 +816,9 @@ class WoodToolsApp:
         self.btn_enviar.config(state="disabled")
         self.btn_cancelar.config(state="normal", text="🛑 CANCELAR ENVÍO")
         
-        threading.Thread(target=self._proceso_envio, args=(tipo, params, df_ok)).start()
+        threading.Thread(target=self._proceso_envio, args=(tipo, params, df_ok, total_base)).start()
 
-    def _proceso_envio(self, tipo, params, df):
+    def _proceso_envio(self, tipo, params, df, total_base):
         media_id = None
         if params.get('ruta_imagen'):
             self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue", bg=COLOR_PANELES) 
@@ -846,8 +848,6 @@ class WoodToolsApp:
                     nombre_gira_corto = params.get('vendedor_gira_corto', '')
                     tel_para_link = mainCode.DB_VENDEDORES.get(nombre_gira_corto, [tel_v])[0]
             
-            link = mainCode.generar_link_whatsapp(tel_para_link, tipo, d_extra)
-            
             url_render = f"{URL_SERVIDOR_RENDER}/asignar_vendedor"
             try: 
                 requests.post(url_render, json={
@@ -858,12 +858,17 @@ class WoodToolsApp:
                     "tanda_id": id_tanda_actual
                 }, timeout=15)
             except Exception as e: 
-                print(f"Error avisando a Render: {e}")
                 pass
 
             for t in row['Telefonos_Validos']:
                 if self.cancelar_envio: break
                 res = False; tipo_error = ""
+                
+                link_original = mainCode.generar_link_whatsapp(tel_para_link, tipo, d_extra)
+                parsed_url = urllib.parse.urlparse(link_original)
+                texto_param = urllib.parse.parse_qs(parsed_url.query).get('text', [''])[0]
+                tel_limpio_10 = ''.join(filter(str.isdigit, str(t)))[-10:]
+                link = f"{URL_SERVIDOR_RENDER}/go/{id_tanda_actual}/{tel_limpio_10}/{tel_para_link}?text={urllib.parse.quote(texto_param)}"
                 
                 if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params.get('herramienta', 'sierras circulares'), link, media_id)
                 elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link, media_id)
@@ -882,7 +887,7 @@ class WoodToolsApp:
                     else: hubo_error_servidor = True
                 
                 herramienta_usada = row.get('Fav_Temp', '-') if tipo == "Recotización" else params.get('herramienta_novedad', '-')
-                mainCode.registrar_envio_db(id_tanda_actual, row['Cliente'], t, tel_v, tipo, herramienta_usada, estado_individual)
+                mainCode.registrar_envio_db(id_tanda_actual, row['Cliente'], t, tel_v, tipo, herramienta_usada, estado_individual, total_base)
                 time.sleep(1)
 
         if self.cancelar_envio: estado_final_tanda = "CAMPAÑA CANCELADA"
@@ -921,10 +926,10 @@ class WoodToolsApp:
         frame_tabla = tk.Frame(vent_rendimiento)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
-        columnas = ("Estado", "Fecha", "Campaña", "Intentos (PC)", "Entregados (Nube)", "Leídos", "Open Rate", "Tasa de Rta.")
+        columnas = ("Estado", "Fecha", "Campaña", "Base (Total)", "Intentos (PC)", "Entregados (Nube)", "Leídos", "Rtas (Bot)", "Deriv. (Vend.)", "Tasa Deriv.")
         tree_rendimiento = ttk.Treeview(frame_tabla, columns=columnas, show="headings", height=15)
         
-        anchos = [80, 100, 200, 100, 120, 80, 100, 100]
+        anchos = [80, 90, 180, 90, 90, 110, 70, 80, 100, 90]
         for col, ancho in zip(columnas, anchos):
             tree_rendimiento.heading(col, text=col)
             tree_rendimiento.column(col, width=ancho, anchor="center")
@@ -943,7 +948,7 @@ class WoodToolsApp:
                 
             tandas = mainCode.obtener_tandas_campanas()
             if not tandas:
-                tree_rendimiento.insert("", "end", values=("---", "---", "Todavía no hay campañas registradas", "---", "---", "---", "---", "---"))
+                tree_rendimiento.insert("", "end", values=("---", "---", "Todavía no hay campañas registradas", "---", "---", "---", "---", "---", "---", "---"))
                 return
                 
             datos_nube = {}
@@ -963,20 +968,21 @@ class WoodToolsApp:
                 fecha = t.get('fecha_inicio', '')[:10]
                 nombre = t.get('tipo_campana', 'Desconocida')
                 intentos_locales = t.get('total_msgs', 0)
+                total_base = t.get('total_base', 0) 
                 t_id = t.get('tanda_id', '')
                 
                 metricas_campana = datos_nube.get(t_id, {})
                 entregados_reales = metricas_campana.get("entregados", 0)
                 leidos_reales = metricas_campana.get("leidos", 0)
                 clics_reales = metricas_campana.get("respondidos", 0)
+                derivados_reales = metricas_campana.get("derivados", 0)
                 
-                open_rate = f"{(leidos_reales / entregados_reales * 100):.1f}%" if entregados_reales > 0 else "0%"
-                click_rate = f"{(clics_reales / entregados_reales * 100):.1f}%" if entregados_reales > 0 else "0%"
+                tasa_deriv = f"{(derivados_reales / entregados_reales * 100):.1f}%" if entregados_reales > 0 else "0%"
                 
                 tree_rendimiento.insert("", "end", values=(
-                    icono_estado, fecha, nombre, intentos_locales, 
+                    icono_estado, fecha, nombre, total_base, intentos_locales, 
                     entregados_reales, leidos_reales, 
-                    open_rate, click_rate
+                    clics_reales, derivados_reales, tasa_deriv
                 ))
 
         cargar_datos_rendimiento()
@@ -992,8 +998,8 @@ class WoodToolsApp:
             if valores[0] == "---": continue
             datos.append({
                 "Estado": valores[0], "Fecha": valores[1], "Campaña": valores[2],
-                "Intentos (PC)": valores[3], "Entregados (Nube)": valores[4],
-                "Leídos": valores[5], "Open Rate": valores[6], "Tasa de Respuesta": valores[7]
+                "Base (Total)": valores[3], "Intentos (PC)": valores[4], "Entregados (Nube)": valores[5],
+                "Leídos": valores[6], "Respuestas al Bot": valores[7], "Derivados al Vendedor": valores[8], "Tasa de Derivación": valores[9]
             })
             
         df = pd.DataFrame(datos)
@@ -1004,7 +1010,6 @@ class WoodToolsApp:
         df.to_excel(ruta_final, index=False)
         os.startfile(carpeta_reportes)
         messagebox.showinfo("Éxito", f"Resumen global exportado en:\n{ruta_final}")
-
 
 if __name__ == "__main__":
     root = tk.Tk()

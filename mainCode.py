@@ -59,22 +59,25 @@ def inicializar_db():
                 estado_tanda TEXT
             )
         ''')
+        # Actualizaciones de esquema (ignora error si ya existen)
         try: cursor.execute('ALTER TABLE historial ADD COLUMN tanda_id TEXT')
         except sqlite3.OperationalError: pass
         try: cursor.execute('ALTER TABLE historial ADD COLUMN estado_tanda TEXT')
         except sqlite3.OperationalError: pass
+        try: cursor.execute('ALTER TABLE historial ADD COLUMN total_base INTEGER DEFAULT 0')
+        except sqlite3.OperationalError: pass
         conn.commit(); conn.close()
     except Exception as e: print(f"Error iniciando DB: {e}")
 
-def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta, estado_individual):
+def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta, estado_individual, total_base=0):
     try:
         conn = sqlite3.connect(ARCHIVO_DB)
         cursor = conn.cursor()
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute('''
-            INSERT INTO historial (tanda_id, fecha_hora, cliente, telefono, vendedor_asignado, tipo_campana, herramienta, estado_envio, estado_tanda)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (tanda_id, fecha, cliente, telefono, vendedor, tipo, herramienta, estado_individual, "PROCESANDO"))
+            INSERT INTO historial (tanda_id, fecha_hora, cliente, telefono, vendedor_asignado, tipo_campana, herramienta, estado_envio, estado_tanda, total_base)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (tanda_id, fecha, cliente, telefono, vendedor, tipo, herramienta, estado_individual, "PROCESANDO", total_base))
         conn.commit(); conn.close()
     except Exception as e: print(f"Error guardando en DB: {e}")
 
@@ -92,7 +95,8 @@ def obtener_tandas_campanas():
         df = pd.read_sql_query('''
             SELECT tanda_id, tipo_campana, vendedor_asignado, 
                    MIN(fecha_hora) as fecha_inicio, COUNT(id) as total_msgs,
-                   MAX(estado_tanda) as estado_tanda, substr(fecha_hora, 1, 7) as mes
+                   MAX(estado_tanda) as estado_tanda, substr(fecha_hora, 1, 7) as mes,
+                   MAX(total_base) as total_base
             FROM historial WHERE tanda_id IS NOT NULL
             GROUP BY tanda_id ORDER BY fecha_inicio DESC
         ''', conn)
