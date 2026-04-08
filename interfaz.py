@@ -868,7 +868,7 @@ class WoodToolsApp:
                 parsed_url = urllib.parse.urlparse(link_original)
                 texto_param = urllib.parse.parse_qs(parsed_url.query).get('text', [''])[0]
                 tel_limpio_10 = ''.join(filter(str.isdigit, str(t)))[-10:]
-                link = f"{URL_SERVIDOR_RENDER}/go/{id_tanda_actual}/{tel_limpio_10}/{tel_para_link}?text={urllib.parse.quote(texto_param)}"
+                link = f"{URL_SERVIDOR_RENDER}/wa/{id_tanda_actual}/{tel_limpio_10}/{tel_para_link}?text={urllib.parse.quote(texto_param)}"
                 
                 if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params.get('herramienta', 'sierras circulares'), link, media_id)
                 elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link, media_id)
@@ -934,6 +934,8 @@ class WoodToolsApp:
             tree_rendimiento.heading(col, text=col)
             tree_rendimiento.column(col, width=ancho, anchor="center")
             
+        tree_rendimiento.tag_configure("organico", background="#E8F5E9", foreground="#2E7D32")
+            
         scroll = ttk.Scrollbar(frame_tabla, orient="vertical", command=tree_rendimiento.yview)
         tree_rendimiento.configure(yscroll=scroll.set)
         scroll.pack(side="right", fill="y")
@@ -947,9 +949,6 @@ class WoodToolsApp:
                 tree_rendimiento.delete(item)
                 
             tandas = mainCode.obtener_tandas_campanas()
-            if not tandas:
-                tree_rendimiento.insert("", "end", values=("---", "---", "Todavía no hay campañas registradas", "---", "---", "---", "---", "---", "---", "---"))
-                return
                 
             datos_nube = {}
             try:
@@ -958,6 +957,22 @@ class WoodToolsApp:
                     datos_nube = res.json()
             except Exception as e:
                 print(f"Error conectando al servidor en la nube: {e}")
+                
+            # INYECCIÓN DE LA FILA ORGÁNICA (Se fija arriba de todo)
+            if "ORGANICO" in datos_nube:
+                org = datos_nube["ORGANICO"]
+                iniciados = org.get("respondidos", 0)
+                derivados = org.get("derivados", 0)
+                tasa_org = f"{(derivados / iniciados * 100):.1f}%" if iniciados > 0 else "0%"
+                
+                tree_rendimiento.insert("", "end", values=(
+                    "🌱 ORGÁNICO", "-", "Chats Orgánicos", "-", "-", 
+                    iniciados, "-", iniciados, derivados, tasa_org
+                ), tags=("organico",))
+
+            if not tandas and not "ORGANICO" in datos_nube:
+                tree_rendimiento.insert("", "end", values=("---", "---", "Todavía no hay campañas registradas", "---", "---", "---", "---", "---", "---", "---"))
+                return
 
             for t in tandas:
                 estado_crudo = t.get('estado_tanda', 'ERROR')

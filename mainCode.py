@@ -59,7 +59,6 @@ def inicializar_db():
                 estado_tanda TEXT
             )
         ''')
-        # Actualizaciones de esquema (ignora error si ya existen)
         try: cursor.execute('ALTER TABLE historial ADD COLUMN tanda_id TEXT')
         except sqlite3.OperationalError: pass
         try: cursor.execute('ALTER TABLE historial ADD COLUMN estado_tanda TEXT')
@@ -333,7 +332,7 @@ def _enviar_request(data):
         res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data)
         if res.status_code == 200: return True, "OK"
         elif 400 <= res.status_code < 500: 
-            print(res.json()) 
+            print("ERROR META:", res.json()) 
             return False, "ERROR DEL CLIENTE"
         else: return False, "ERROR DEL SERVIDOR" 
     except Exception: return False, "ERROR DEL SERVIDOR"
@@ -349,68 +348,98 @@ def subir_imagen_whatsapp(ruta):
     except: return None
 
 # ==========================================
+# MAGIA DE BOTONES: EXTRACTOR DE ENLACE DINÁMICO
+# ==========================================
+def extraer_sufijo_dinamico(link_completo):
+    # Corta la parte principal para que Meta la lea como parámetro dinámico del botón
+    base = "https://woodtools-webhook.onrender.com/wa/"
+    if str(link_completo).startswith(base):
+        return link_completo[len(base):]
+    return link_completo
+
+# ==========================================
 # FUNCIONES DE ENVÍO DE PLANTILLAS
 # ==========================================
 def enviar_promocion(tel, nombre, producto_promo, link, media_id): 
+    dynamic_url = extraer_sufijo_dinamico(link)
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [
                 {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
                 {"type": "body", "parameters": [
-                    {"type": "text", "parameter_name": "1", "text": str(nombre)}, 
-                    {"type": "text", "parameter_name": "2", "text": str(producto_promo)}, 
-                    {"type": "text", "parameter_name": "3", "text": str(link)}
+                    {"type": "text", "text": str(nombre)}, 
+                    {"type": "text", "text": str(producto_promo)}
+                ]},
+                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
+                    {"type": "text", "text": dynamic_url}
                 ]}
             ]
         }
     })
 
 def enviar_rescate(tel, nom, prod, link, media_id): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [
-        {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-        {"type": "body", "parameters": [
-            {"type": "text", "parameter_name": "1", "text": str(nom)}, 
-            {"type": "text", "parameter_name": "2", "text": str(prod)}, 
-            {"type": "text", "parameter_name": "3", "text": str(link)}
-        ]}
-    ]}})
+    dynamic_url = extraer_sufijo_dinamico(link)
+    return _enviar_request({
+        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
+            "name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [
+                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+                {"type": "body", "parameters": [
+                    {"type": "text", "text": str(nom)}, 
+                    {"type": "text", "text": str(prod)}
+                ]},
+                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
+                    {"type": "text", "text": dynamic_url}
+                ]}
+            ]
+        }
+    })
 
 def enviar_gira(tel, vend, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [
-        {"type": "body", "parameters": [
-            {"type": "text", "parameter_name": "1", "text": str(vend)}, 
-            {"type": "text", "parameter_name": "2", "text": str(link)}
-        ]}
-    ]}})
-
-def enviar_recotizacion(tel, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [
-        {"type": "body", "parameters": [
-            {"type": "text", "parameter_name": "1", "text": str(link)}
-        ]}
-    ]}})
+    dynamic_url = extraer_sufijo_dinamico(link)
+    return _enviar_request({
+        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
+            "name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [
+                {"type": "body", "parameters": [
+                    {"type": "text", "text": str(vend)}
+                ]},
+                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
+                    {"type": "text", "text": dynamic_url}
+                ]}
+            ]
+        }
+    })
 
 def enviar_novedades(tel, tipo_novedad, herramienta, link_wa, media_id):
     frase = "Acaban de ingresar nuevos modelos." if tipo_novedad == "Nuevo producto" else "Pudimos reponer el stock que esperabas."
+    dynamic_url = extraer_sufijo_dinamico(link_wa)
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_NOVEDADES, "language": {"code": "es"}, "components": [
                 {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
                 {"type": "body", "parameters": [
-                    {"type": "text", "parameter_name": "1", "text": str(herramienta)},
-                    {"type": "text", "parameter_name": "2", "text": str(frase)},
-                    {"type": "text", "parameter_name": "3", "text": str(link_wa)}
+                    {"type": "text", "text": str(herramienta)},
+                    {"type": "text", "text": str(frase)}
+                ]},
+                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
+                    {"type": "text", "text": dynamic_url}
                 ]}
             ]
         }
     })
+
+def enviar_recotizacion(tel, link): 
+    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [
+        {"type": "body", "parameters": [
+            {"type": "text", "text": str(link)}
+        ]}
+    ]}})
 
 def enviar_personalizado(tel, caption_final, media_id): 
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PERSONALIZADO, "language": {"code": "es"}, "components": [
                 {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-                {"type": "body", "parameters": [{"type": "text", "parameter_name": "1", "text": str(caption_final)[:1000]}]}
+                {"type": "body", "parameters": [{"type": "text", "text": str(caption_final)[:1000]}]}
             ]
         }
     })
