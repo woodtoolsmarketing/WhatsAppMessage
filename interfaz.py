@@ -10,7 +10,7 @@ import ctypes
 import urllib.parse
 import requests  
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import mainCode 
 
@@ -742,7 +742,7 @@ class WoodToolsApp:
                 
             if os.path.exists(ruta_logo):
                 max_row = len(df_final) + 1 
-                fecha_hora_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                fecha_hora_actual = mainCode.hora_arg().strftime("%Y-%m-%d %H:%M:%S")
                 
                 formato_texto = workbook.add_format({'bold': True, 'font_color': '#a41e22'})
                 worksheet.write(max_row + 2, 0, f"Reporte generado el: {fecha_hora_actual}", formato_texto)
@@ -828,7 +828,7 @@ class WoodToolsApp:
                 self.root.after(0, lambda: self.btn_cancelar.config(state="disabled"))
                 return messagebox.showerror("Error", "Fallo subida imagen a Meta. La imagen no debe superar los 5MB o el formato es incorrecto.")
 
-        id_tanda_actual = datetime.now().strftime("TANDA_%Y%m%d_%H%M%S")
+        id_tanda_actual = mainCode.hora_arg().strftime("TANDA_%Y%m%d_%H%M%S")
         tot = len(df); ok = 0; err = 0; hubo_error_servidor = False; hubo_error_cliente = False
         
         for i, (_, row) in enumerate(df.iterrows()):
@@ -1021,7 +1021,7 @@ class WoodToolsApp:
         ruta_base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
         carpeta_reportes = os.path.join(ruta_base, "Reportes campañas")
         if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
-        ruta_final = os.path.join(carpeta_reportes, f"Resumen_Global_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        ruta_final = os.path.join(carpeta_reportes, f"Resumen_Global_{mainCode.hora_arg().strftime('%Y%m%d_%H%M%S')}.xlsx")
         df.to_excel(ruta_final, index=False)
         os.startfile(carpeta_reportes)
         messagebox.showinfo("Éxito", f"Resumen global exportado en:\n{ruta_final}")

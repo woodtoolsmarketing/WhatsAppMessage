@@ -5,7 +5,7 @@ import sys
 import urllib.parse
 import sqlite3
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
@@ -25,6 +25,10 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapi
 # ==========================================
 # LÓGICA DE RUTAS Y BASE DE DATOS LOCAL
 # ==========================================
+def hora_arg():
+    """Devuelve la hora actual en Argentina (UTC-3)"""
+    return datetime.utcnow() - timedelta(hours=3)
+
 def obtener_ruta_recurso(ruta_relativa):
     if getattr(sys, 'frozen', False):
         ruta_base = sys._MEIPASS
@@ -72,7 +76,7 @@ def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta,
     try:
         conn = sqlite3.connect(ARCHIVO_DB)
         cursor = conn.cursor()
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        fecha = hora_arg().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute('''
             INSERT INTO historial (tanda_id, fecha_hora, cliente, telefono, vendedor_asignado, tipo_campana, herramienta, estado_envio, estado_tanda, total_base)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
