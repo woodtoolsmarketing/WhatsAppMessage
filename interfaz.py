@@ -222,7 +222,13 @@ class WoodToolsApp:
         frame_der = tk.Frame(vent, bg=COLOR_PANELES)
         frame_der.pack(side="right", fill="both", expand=True, padx=10, pady=10)
 
-        tk.Label(frame_izq, text="Lista de Clientes", bg=COLOR_PANELES, font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        # NUEVO ENCABEZADO CON BOTÓN ACTUALIZAR
+        frame_lista_top = tk.Frame(frame_izq, bg=COLOR_PANELES)
+        frame_lista_top.pack(fill="x", pady=(0, 5))
+        tk.Label(frame_lista_top, text="Lista de Clientes", bg=COLOR_PANELES, font=("Segoe UI", 11, "bold")).pack(side="left")
+        btn_actualizar = tk.Button(frame_lista_top, text="🔄 Actualizar", bg="#2196F3", fg="white", font=("Arial", 9, "bold"))
+        btn_actualizar.pack(side="right")
+
         lista_chats = tk.Listbox(frame_izq, font=("Arial", 11))
         lista_chats.pack(fill="both", expand=True, pady=5)
 
@@ -230,38 +236,53 @@ class WoodToolsApp:
         txt_chat = tk.Text(frame_der, font=("Arial", 11), wrap="word", state="disabled")
         txt_chat.pack(fill="both", expand=True, pady=(0, 10))
 
-        btn_resuelto = tk.Button(frame_der, text="✅ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("bold", 11))
+        btn_resuelto = tk.Button(frame_der, text="✅ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("bold", 11), state="disabled")
         btn_resuelto.pack(fill="x")
 
-        try:
-            res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados", timeout=30)
-            if res.status_code == 200:
-                datos_chats = res.json()
-            else:
-                datos_chats = []
-                messagebox.showerror("Error", f"El servidor respondió con código de error {res.status_code}.\nRevisá los logs en Render.", parent=vent)
-        except requests.exceptions.Timeout:
-            datos_chats = []
-            messagebox.showerror("Aviso", "El servidor de Render tardó mucho en responder porque estaba 'durmiendo'.\nPor favor, cerrá esta ventana e intentalo de nuevo en 30 segundos.", parent=vent)
-        except Exception as e:
-            datos_chats = []
-            messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\nDetalle técnico: {str(e)}", parent=vent)
+        # Variable de instancia para esta ventana
+        self.datos_chats_actuales = []
 
-        if not datos_chats:
-            lista_chats.insert(tk.END, "✅ No hay chats abandonados.")
+        def cargar_datos():
+            lista_chats.delete(0, tk.END)
+            txt_chat.config(state="normal")
+            txt_chat.delete("1.0", tk.END)
+            txt_chat.config(state="disabled")
             btn_resuelto.config(state="disabled")
+            btn_actualizar.config(state="disabled", text="⏳ Cargando...")
+            vent.update()
 
-        for d in datos_chats:
-            nombre_vendedor = d['vendedor']
-            for nombre, numeros in mainCode.DB_VENDEDORES.items():
-                if d['vendedor'] in numeros: nombre_vendedor = nombre; break
-            lista_chats.insert(tk.END, f"+{d['telefono']} ({nombre_vendedor})")
+            try:
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados", timeout=30)
+                if res.status_code == 200:
+                    self.datos_chats_actuales = res.json()
+                else:
+                    self.datos_chats_actuales = []
+                    messagebox.showerror("Error", f"El servidor respondió con código de error {res.status_code}.\nRevisá los logs en Render.", parent=vent)
+            except requests.exceptions.Timeout:
+                self.datos_chats_actuales = []
+                messagebox.showerror("Aviso", "El servidor de Render tardó mucho en responder.\nPor favor, intentá de nuevo en 30 segundos.", parent=vent)
+            except Exception as e:
+                self.datos_chats_actuales = []
+                messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\nDetalle técnico: {str(e)}", parent=vent)
+
+            if not self.datos_chats_actuales:
+                lista_chats.insert(tk.END, "✅ No hay chats abandonados.")
+            else:
+                for d in self.datos_chats_actuales:
+                    nombre_vendedor = d['vendedor']
+                    for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                        if d['vendedor'] in numeros: nombre_vendedor = nombre; break
+                    lista_chats.insert(tk.END, f"+{d['telefono']} ({nombre_vendedor})")
+
+            btn_actualizar.config(state="normal", text="🔄 Actualizar")
+
+        btn_actualizar.config(command=cargar_datos)
 
         def mostrar_chat(evt):
             sel = lista_chats.curselection()
-            if not sel or not datos_chats: return
+            if not sel or not self.datos_chats_actuales: return
             idx = sel[0]
-            chat_data = datos_chats[idx]
+            chat_data = self.datos_chats_actuales[idx]
             
             txt_chat.config(state="normal")
             txt_chat.delete("1.0", tk.END)
@@ -277,27 +298,31 @@ class WoodToolsApp:
                 txt_chat.insert(tk.END, f"{role}:\n{text}\n\n")
                 
             txt_chat.config(state="disabled")
+            btn_resuelto.config(state="normal")
 
         lista_chats.bind("<<ListboxSelect>>", mostrar_chat)
 
         def marcar_resuelto():
             sel = lista_chats.curselection()
-            if not sel or not datos_chats: return
+            if not sel or not self.datos_chats_actuales: return
             idx = sel[0]
-            tel = datos_chats[idx]['telefono']
+            tel = self.datos_chats_actuales[idx]['telefono']
             try:
                 requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados/{tel}")
                 lista_chats.delete(idx)
-                datos_chats.pop(idx)
+                self.datos_chats_actuales.pop(idx)
                 txt_chat.config(state="normal")
                 txt_chat.delete("1.0", tk.END)
                 txt_chat.config(state="disabled")
+                btn_resuelto.config(state="disabled")
                 messagebox.showinfo("Éxito", "El chat fue marcado como resuelto y eliminado de la lista.", parent=vent)
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo borrar el chat de la base de datos.\nDetalle: {str(e)}", parent=vent)
 
         btn_resuelto.config(command=marcar_resuelto)
 
+        # Cargar datos al abrir la ventana
+        cargar_datos()
 
     def verificar_observados(self):
         if self.df_filtrado.empty:
