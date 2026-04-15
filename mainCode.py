@@ -18,9 +18,32 @@ CLOUD_API_TOKEN = "EAAUkLctR4q0BQ8mcvr7YtqEacloCMCDHq1AY8VE0gc0ZBIIZBboTSCSEIEOQ
 PHONE_NUMBER_ID = "1041050652417644"
 VERSION = "v17.0"
 BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
+URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 
 NOMBRE_HOJA = "Base de datos wt"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+
+# ==========================================
+# LÓGICA DE CONTROL DEL BOT INTELIGENTE
+# ==========================================
+def obtener_estado_bot_nube():
+    """Consulta al servidor de Render el estado actual del bot"""
+    try:
+        res = requests.get(f"{URL_SERVIDOR_RENDER}/estado_bot", timeout=10)
+        if res.status_code == 200:
+            return res.json()
+        return None
+    except:
+        return None
+
+def cambiar_estado_bot_nube(nuevo_estado):
+    """Envía la orden al servidor para cambiar el modo ('AUTO', 'ON', 'OFF')"""
+    try:
+        res = requests.post(f"{URL_SERVIDOR_RENDER}/estado_bot", 
+                            json={"configuracion": nuevo_estado}, timeout=10)
+        return res.status_code == 200
+    except:
+        return False
 
 # ==========================================
 # LÓGICA DE RUTAS Y BASE DE DATOS LOCAL

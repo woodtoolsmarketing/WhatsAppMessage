@@ -28,7 +28,7 @@ def obtener_ruta_interna(ruta_relativa):
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp v11.0 - CRM")
+        self.root.title("Gestor de Marketing WhatsApp v12.0 - CRM")
         self.root.geometry("1500x900") 
         self.root.state('zoomed') 
         self.root.configure(bg=COLOR_ROJO_WT) 
@@ -45,7 +45,7 @@ class WoodToolsApp:
         menu_reportes.add_command(label="Ver rendimiento de la campaña", command=self.abrir_rendimiento)
         
         try:
-            myappid = 'woodtools.gestormarketing.11.0' 
+            myappid = 'woodtools.gestormarketing.12.0' 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception: pass 
             
@@ -81,6 +81,21 @@ class WoodToolsApp:
         
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
+
+        # --- PANEL CONTROL BOT INTELIGENTE (NUEVO) ---
+        self.frame_bot_control = tk.Frame(frame_top, bg="white", padx=10, pady=2, highlightbackground="#ccc", highlightthickness=1)
+        self.frame_bot_control.pack(side=tk.RIGHT, padx=20)
+        
+        self.lbl_bot_titulo = tk.Label(self.frame_bot_control, text="BOT INTELIGENTE", font=("Segoe UI", 8, "bold"), bg="white", fg="gray")
+        self.lbl_bot_titulo.pack()
+        
+        self.lbl_bot_estado = tk.Label(self.frame_bot_control, text="CONECTANDO...", font=("Segoe UI", 10, "bold"), bg="white", fg="orange")
+        self.lbl_bot_estado.pack()
+        
+        self.btn_toggle_bot = tk.Button(self.frame_bot_control, text="Cargando...", command=self.click_toggle_bot, font=("Segoe UI", 8), bg="#eee", relief="groove")
+        self.btn_toggle_bot.pack(pady=2)
+        
+        self.config_bot_actual = "AUTO"
 
         frame_filtros = tk.LabelFrame(root, text="Filtros", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")) 
         frame_filtros.pack(fill="x", padx=20, pady=2)
@@ -187,6 +202,8 @@ class WoodToolsApp:
         scroll = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scroll.set); scroll.pack(side="right", fill="y"); self.tree.pack(fill="both", expand=True)
 
+        self.actualizar_estado_bot_loop()
+
     def cargar_logo_con_ovalo(self, parent):
         ruta_1 = obtener_ruta_interna(r"Imagenes\logo.png")
         ruta_2 = obtener_ruta_interna("logo.png")
@@ -208,6 +225,66 @@ class WoodToolsApp:
             except Exception as e: print(f"Error cargando logo: {e}")
 
     # ==========================================
+    # LÓGICA VISUAL DEL BOT
+    # ==========================================
+    def actualizar_estado_bot_loop(self):
+        def tarea():
+            data = mainCode.obtener_estado_bot_nube()
+            if data:
+                self.config_bot_actual = data['configuracion']
+                modo = data['modo_actual']
+                
+                if modo == "INTELIGENTE":
+                    self.root.after(0, lambda: self.lbl_bot_estado.config(text="● ENCENDIDO", fg="#2E7D32"))
+                else:
+                    self.root.after(0, lambda: self.lbl_bot_estado.config(text="○ APAGADO (Básico)", fg="#C62828"))
+                
+                if self.config_bot_actual == "AUTO":
+                    self.root.after(0, lambda: self.btn_toggle_bot.config(text="Modo: Automático 🕒"))
+                elif self.config_bot_actual == "ON":
+                    self.root.after(0, lambda: self.btn_toggle_bot.config(text="Modo: Siempre ON 🟢"))
+                else:
+                    self.root.after(0, lambda: self.btn_toggle_bot.config(text="Modo: Siempre OFF 🔴"))
+            else:
+                self.root.after(0, lambda: self.lbl_bot_estado.config(text="ERROR CONEXIÓN", fg="gray"))
+            
+            self.root.after(30000, self.actualizar_estado_bot_loop)
+
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def click_toggle_bot(self):
+        proximos = {"AUTO": "ON", "ON": "OFF", "OFF": "AUTO"}
+        nuevo = proximos.get(self.config_bot_actual, "AUTO")
+        
+        self.btn_toggle_bot.config(state="disabled", text="Cambiando...")
+        
+        def enviar():
+            exito = mainCode.cambiar_estado_bot_nube(nuevo)
+            if exito:
+                self.config_bot_actual = nuevo
+                data = mainCode.obtener_estado_bot_nube()
+                if data:
+                    self.root.after(0, lambda: self.btn_toggle_bot.config(state="normal"))
+                    self.root.after(0, lambda d=data: self.actualizar_ui_manual(d))
+            else:
+                self.root.after(0, lambda: messagebox.showerror("Error", "No se pudo conectar con el servidor para cambiar el modo."))
+                self.root.after(0, lambda: self.btn_toggle_bot.config(state="normal"))
+
+        threading.Thread(target=enviar, daemon=True).start()
+
+    def actualizar_ui_manual(self, data):
+        self.config_bot_actual = data['configuracion']
+        modo = data['modo_actual']
+        if modo == "INTELIGENTE":
+            self.lbl_bot_estado.config(text="● ENCENDIDO", fg="#2E7D32")
+        else:
+            self.lbl_bot_estado.config(text="○ APAGADO (Básico)", fg="#C62828")
+        
+        textos = {"AUTO": "Modo: Automático 🕒", "ON": "Modo: Siempre ON 🟢", "OFF": "Modo: Siempre OFF 🔴"}
+        self.btn_toggle_bot.config(text=textos.get(self.config_bot_actual, "Error"))
+
+
+    # ==========================================
     # PANTALLA DE CHATS ABANDONADOS
     # ==========================================
     def abrir_chats_derivados(self):
@@ -222,7 +299,6 @@ class WoodToolsApp:
         frame_der = tk.Frame(vent, bg=COLOR_PANELES)
         frame_der.pack(side="right", fill="both", expand=True, padx=10, pady=10)
 
-        # NUEVO ENCABEZADO CON BOTÓN ACTUALIZAR
         frame_lista_top = tk.Frame(frame_izq, bg=COLOR_PANELES)
         frame_lista_top.pack(fill="x", pady=(0, 5))
         tk.Label(frame_lista_top, text="Lista de Clientes", bg=COLOR_PANELES, font=("Segoe UI", 11, "bold")).pack(side="left")
@@ -239,7 +315,6 @@ class WoodToolsApp:
         btn_resuelto = tk.Button(frame_der, text="✅ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("bold", 11), state="disabled")
         btn_resuelto.pack(fill="x")
 
-        # Variable de instancia para esta ventana
         self.datos_chats_actuales = []
 
         def cargar_datos():
@@ -321,7 +396,6 @@ class WoodToolsApp:
 
         btn_resuelto.config(command=marcar_resuelto)
 
-        # Cargar datos al abrir la ventana
         cargar_datos()
 
     def verificar_observados(self):
