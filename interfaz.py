@@ -400,21 +400,57 @@ class WoodToolsApp:
 
     def verificar_observados(self):
         if self.df_filtrado.empty:
-            msg = "✅ No hay datos cargados."
-        else:
-            df_descartados = self.df_filtrado[self.df_filtrado['Es_Valido'] == False]
-            if df_descartados.empty:
-                msg = "✅ No hay números descartados en la lista actual filtrada."
-            else:
-                msg = f"--- {len(df_descartados)} DESCARTADOS (En este filtro) ---\n\n"
-                for _, row in df_descartados.iterrows():
-                    tels = row.get('Telefonos_Raw', [])
-                    msg += f"• {row['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
+            return messagebox.showinfo("Aviso", "✅ No hay datos cargados.")
+            
+        df_descartados = self.df_filtrado[self.df_filtrado['Es_Valido'] == False]
+        if df_descartados.empty:
+            return messagebox.showinfo("Aviso", "✅ No hay números descartados en la lista actual filtrada.")
+            
+        msg = f"--- {len(df_descartados)} DESCARTADOS (En este filtro) ---\n\n"
+        for _, row in df_descartados.iterrows():
+            tels = row.get('Telefonos_Raw', [])
+            cod = row.get('Código de cliente', '')
+            texto_cod = f"[{cod}] " if cod else ""
+            msg += f"• {texto_cod}{row['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
         
         vent = tk.Toplevel(self.root)
-        vent.title("Descartados (Filtrados)"); vent.geometry("500x400")
-        t = tk.Text(vent, wrap="word", padx=10, pady=10); t.pack(fill="both", expand=True)
-        t.insert("1.0", msg); t.config(state="disabled")
+        vent.title("Descartados (Filtrados)")
+        vent.geometry("550x450")
+        vent.configure(bg=COLOR_PANELES)
+        
+        t = tk.Text(vent, wrap="word", padx=10, pady=10, font=("Arial", 10))
+        t.pack(fill="both", expand=True, padx=10, pady=10)
+        t.insert("1.0", msg)
+        t.config(state="disabled")
+
+        # --- NUEVA FUNCIÓN PARA EXPORTAR A EXCEL ---
+        def exportar_descartes_excel():
+            datos_export = []
+            for _, row in df_descartados.iterrows():
+                tels = row.get('Telefonos_Raw', [])
+                datos_export.append({
+                    "Código de cliente": row.get('Código de cliente', ''),
+                    "Nombre": row['Cliente'],
+                    "Número": " | ".join(tels) if tels else "Sin número"
+                })
+                
+            df_export = pd.DataFrame(datos_export)
+            ruta_guardar = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel", "*.xlsx")],
+                title="Guardar Descartes en Excel",
+                initialfile=f"Descartados_WoodTools_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            )
+            
+            if ruta_guardar:
+                try:
+                    df_export.to_excel(ruta_guardar, index=False)
+                    messagebox.showinfo("Éxito", f"Base de descartados exportada perfectamente.\n\nGuardada en:\n{ruta_guardar}", parent=vent)
+                except Exception as e:
+                    messagebox.showerror("Error", f"No se pudo guardar el archivo:\n{e}", parent=vent)
+
+        btn_exportar = tk.Button(vent, text="📥 Exportar a Excel", command=exportar_descartes_excel, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_exportar.pack(pady=10)
 
     def actualizar_preview(self, event=None):
         tipo = self.tipo_mensaje_var.get()

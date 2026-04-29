@@ -275,7 +275,7 @@ def leer_desde_google_sheets(nombre_pestana=""):
             
             if cliente_nom != "Sin Nombre" and cliente_nom != "Cliente Sin Nombre":
                 registros.append({
-                    'Número de cliente': aplicar_correcciones_texto(row.get('Número de cliente', '')),
+                    'Código de cliente': aplicar_correcciones_texto(row.get('Código de cliente', row.get('Número de cliente', ''))),
                     'Cliente': cliente_nom,
                     'Zona': aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0'))) or '0',
                     'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
