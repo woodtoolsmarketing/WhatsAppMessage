@@ -164,6 +164,108 @@ DB_VENDEDORES = {
     "Alan": ["5491156321012"],
     "Luis": ["5491168457778"]
 }
+
+REVENDEDORES_CODIGOS = {
+    "4652": "Abalos Esteban",
+    "2253": "Acinar",
+    "14285": "Acosta Hernan Dario Herrajes tafildel valle",
+    "7195": "Afilacion Soriano",
+    "4373": "Afipar",
+    "1889": "Aldo Rodruguez /Idecort",
+    "1789": "Alonso Matias",
+    "11858": "ALENKA GRACIELA",
+    "10344": "Arbelaiz",
+    "11699": "ANTONIJEVIC IVAN DANIEL",
+    "9239": "Barnes problemático pagar",
+    "12394": "Battaller Estebam",
+    "11785": "Bevacqua Manuel",
+    "12430": "BertoLazzi Alejandra",
+    "905": "Bidinost",
+    "9931": "BIMETAL",
+    "9288": "Blanco Maq. (Staffolani Roman)",
+    "11611": "COOP.DE TRAB EL CARANDA LIM F.",
+    "1558": "Jose Blas Pinamar",
+    "879": "Ciganoto",
+    "11775": "Braga Alicia ex lucich (6412)",
+    "214": "setefratti",
+    "10679": "BREDICE MAURO DANIEL",
+    "12515": "Bhoor AIA",
+    "10428": "Bruni Marcos",
+    "7933": "Bulonera Torcuato",
+    "94": "Cabello Susana (Af del sur Damian)",
+    "2514": "Capovilla Ernesto",
+    "906": "Catavorello",
+    "1538": "Chiappa Sierras",
+    "11268": "DELBRE",
+    "3640": "TECNO L.D.",
+    "6626": "Dartamani Carlos",
+    "14639": "DUERO AFILADO( Cordoba)",
+    "2633": "Ellemberger` Edgar",
+    "6421": "Fisicaro Mauricio",
+    "2123": "Forti Oscar (Bruni)",
+    "9541": "Fraile Julio",
+    "228": "FREMECH Ariel Gomez",
+    "14181": "Fernadez Jorge Luis El Rey de la melamina",
+    "2691": "Grodnienski Max (Abraham Maq.)",
+    "1092": "IMAD S.R.L.",
+    "9645": "Javier Haedo",
+    "5789": "Keil Gerardo vendedor 32",
+    "7986": "Kranjac Hnos (afilador)",
+    "4446": "Kurtz Adolfo",
+    "8907": "La casa de las Herramientas",
+    "14791": "LEPRI MARIANO",
+    "3044": "lagomarcino",
+    "1369": "Mancardi(afilador)",
+    "841": "Maq Caseros",
+    "5809": "Maq Picotto Mario",
+    "12043": "MACHENA SRL DI CESARE",
+    "8966": "Martiren Ruben(glorioso 10622)",
+    "138": "Met Picotto (edgardo)",
+    "6494": "Monica- Todo Filo",
+    "1214": "MULTIPLACAS SA",
+    "5677": "Moscuzza Daniel",
+    "2569": "Mutilva",
+    "691": "NEA GESTION S.R.L.",
+    "7851": "Palavecino",
+    "820": "Paoletti",
+    "2591": "Piccini Martin (Afilados Postai)",
+    "8467": "Riquelme Luis (bariloche)",
+    "7317": "Romero Guadalberto/Garcia H",
+    "15904": "EDMUNDO Y ANDRES LACONI",
+    "136": "Rupper Hugo",
+    "8848": "S.P.M",
+    "9251": "Santana",
+    "12100": "Sergio martinez",
+    "10966": "SERVIMAD Ciccioli",
+    "5005": "Sierras Andinas(afilador y revendedor)",
+    "1676": "Sierras del Parana",
+    "13328": "Silva Nicolas Martin",
+    "5207": "Talleres Ciudadela",
+    "3138": "Taurus",
+    "4257": "TODO AFILADO VIZOSO",
+    "9360": "Torres Graciela",
+    "12631": "VADI PLAC",
+    "3023": "Vila",
+    "4682": "Waintrub",
+    "3730": "Wegiers Angel (Multiplacas)",
+    "7216": "Zaninovic",
+    "9766": "Zapico Sebastian",
+    "9220": "Zubizarreta Luis Alberto(afilador)",
+    "14481": "MAGARO SA (FERRETERIA)"
+}
+
+REVENDEDORES_NOMBRES = [
+    "BIRBA LEANDRO JORGE",
+    "Dutra Alexis Uruguay",
+    "Garcia Joaquin",
+    "IFRAN",
+    "Mastro Mauro hermanos",
+    "Oscar de casa nova",
+    "Sergio Pastre",
+    "PAIVA ESTEBAN",
+    "VIDELA RAUL ALEJANDRO"
+]
+
 LISTA_OBSERVADOS = []
 
 def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
@@ -273,9 +375,25 @@ def leer_desde_google_sheets(nombre_pestana=""):
                     if not num_only.startswith("000") and num_only: tels_raw.append(num_raw_limpio)
                 cliente_nom = str(row.get('Cliente', row.get('Nombres', row.get('Nombre', 'Sin Nombre')))).strip() or "Sin Nombre"
             
+            cod_cliente = aplicar_correcciones_texto(row.get('Código de cliente', row.get('Número de cliente', ''))).strip()
+            
+            # --- FILTRO DE REVENDEDORES ---
+            es_revendedor = False
+            if cod_cliente and cod_cliente in REVENDEDORES_CODIGOS:
+                es_revendedor = True
+            else:
+                for rev_nombre in REVENDEDORES_NOMBRES:
+                    if rev_nombre.lower() in cliente_nom.lower():
+                        es_revendedor = True
+                        break
+                        
+            if es_revendedor:
+                continue 
+            # ------------------------------
+            
             if cliente_nom != "Sin Nombre" and cliente_nom != "Cliente Sin Nombre":
                 registros.append({
-                    'Código de cliente': aplicar_correcciones_texto(row.get('Código de cliente', row.get('Número de cliente', ''))),
+                    'Código de cliente': cod_cliente,
                     'Cliente': cliente_nom,
                     'Zona': aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0'))) or '0',
                     'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
@@ -378,7 +496,6 @@ def subir_imagen_whatsapp(ruta):
 # MAGIA DE BOTONES: EXTRACTOR DE ENLACE DINÁMICO
 # ==========================================
 def extraer_sufijo_dinamico(link_completo):
-    # Corta la parte principal para que Meta la lea como parámetro dinámico del botón
     base = "https://woodtools-webhook.onrender.com/wa/"
     if str(link_completo).startswith(base):
         return link_completo[len(base):]
