@@ -159,7 +159,7 @@ class WoodToolsApp:
         self.frame_preview = tk.LabelFrame(frame_campana, text="Vista Previa", bg=COLOR_PANELES, fg="#555", font=("Segoe UI", 9, "bold"))
         self.frame_preview.grid(row=0, column=3, rowspan=2, padx=10, sticky="nsew")
         
-        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=7, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=5, pady=5, fg="#333")
+        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=9, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=5, pady=5, fg="#333")
         self.lbl_preview_text.pack(padx=5, pady=2, fill="both", expand=True)
 
         self.entry_dinamico_texto.bind("<KeyRelease>", self.actualizar_preview)
@@ -282,7 +282,6 @@ class WoodToolsApp:
         
         textos = {"AUTO": "Modo: Automático 🕒", "ON": "Modo: Siempre ON 🟢", "OFF": "Modo: Siempre OFF 🔴"}
         self.btn_toggle_bot.config(text=textos.get(self.config_bot_actual, "Error"))
-
 
     # ==========================================
     # PANTALLA DE CHATS ABANDONADOS
@@ -463,8 +462,8 @@ class WoodToolsApp:
                 herramienta_ej = df_ok.iloc[0].get('Fav_Temp', herramienta_ej)
 
         if tipo == "Promociones":
-            prod_promo = self.entry_dinamico_texto.get().strip() or "sierras circulares para seccionadora y escuadradora"
-            preview = f"[📷 IMAGEN]\nHola {nombre_ej} 👋 Te contactamos para contarte que tenemos promociones en {prod_promo}. ¡Contactanos acá 👉 [Link de WhatsApp] por más información!"
+            prod_promo = self.entry_dinamico_texto.get().strip() or "Sierras"
+            preview = f"[📷 IMAGEN]\nHola {nombre_ej} 👋 Te contactamos para contarte que tenemos promociones en {prod_promo}.\n¡Contactanos acá 👇 por más información!\n\n🔘 [ Enviar mensaje ]"
         elif tipo == "Rescate (Te extrañamos)":
             preview = f"[📷 IMAGEN]\n¡Hola {nombre_ej}! Vimos que hace tiempo no nos compras. Te invitamos a reponer tu stock de {herramienta_ej} para tu taller. Entrá a este link para más información 👉 [Link de WhatsApp] ¡Saludos!"
         elif tipo == "Gira Vendedor":
