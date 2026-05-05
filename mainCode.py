@@ -379,16 +379,30 @@ def leer_desde_google_sheets(nombre_pestana=""):
             
             # --- FILTRO DE REVENDEDORES ---
             es_revendedor = False
+            nombre_lower = cliente_nom.lower()
+            
+            # 1. Filtro por Código de Cliente
             if cod_cliente and cod_cliente in REVENDEDORES_CODIGOS:
                 es_revendedor = True
+                
+            # 2. Filtro infalible por etiqueta explícita en el nombre
+            elif "(reventa)" in nombre_lower or "reventa" in nombre_lower or "revendedor" in nombre_lower:
+                es_revendedor = True
+                
             else:
+                # 3. Buscar en la lista aislada de nombres
                 for rev_nombre in REVENDEDORES_NOMBRES:
-                    if rev_nombre.lower() in cliente_nom.lower():
+                    if rev_nombre.lower() in nombre_lower:
                         es_revendedor = True
                         break
                         
-            if es_revendedor:
-                continue 
+                # 4. Buscar cruzado en los valores del diccionario
+                if not es_revendedor:
+                    for cod, nombre_dict in REVENDEDORES_CODIGOS.items():
+                        palabra_clave_dict = nombre_dict.split(" ")[0].lower()
+                        if len(palabra_clave_dict) > 3 and palabra_clave_dict in nombre_lower:
+                            es_revendedor = True
+                            break
             # ------------------------------
             
             if cliente_nom != "Sin Nombre" and cliente_nom != "Cliente Sin Nombre":
@@ -398,7 +412,8 @@ def leer_desde_google_sheets(nombre_pestana=""):
                     'Zona': aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0'))) or '0',
                     'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
                     'Telefonos_Raw': tels_raw,
-                    'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip()
+                    'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip(),
+                    'Es_Revendedor': es_revendedor
                 })
         return registros
     except Exception: return []
@@ -443,18 +458,32 @@ def conectar_y_procesar(nombre_pestana=""):
     for registro in datos:
         raw_list = registro.get('Telefonos_Raw', [])
         validos, invalidos = [], []
+        
         for raw_tel in raw_list:
             es_valido, tel_fmt = validar_formato_numero(raw_tel)
-            if es_valido: validos.append(tel_fmt)
-            else: invalidos.append(raw_tel)
+            if es_valido:
+                if tel_fmt not in validos:
+                    validos.append(tel_fmt)
+            else:
+                if raw_tel not in invalidos:
+                    invalidos.append(raw_tel)
             
+        # Si es revendedor, forzamos que todos sus números vayan a la lista de inválidos
+        # Esto hace que visualmente figure en la tabla pero se marque como DESCARTADO
+        if registro.get('Es_Revendedor', False):
+            invalidos.extend(validos)
+            validos = []
+            registro['Es_Valido'] = False
+            registro['Tel_Formateado'] = "Descartado (Revendedor)"
+        else:
+            registro['Es_Valido'] = len(validos) > 0 
+            if validos: registro['Tel_Formateado'] = " | ".join(validos)
+            elif invalidos: registro['Tel_Formateado'] = invalidos[0]
+            else: registro['Tel_Formateado'] = "Sin número"
+
         registro['Telefonos_Validos'] = validos
         registro['Telefonos_Invalidos'] = invalidos
-        registro['Es_Valido'] = len(validos) > 0 
         
-        if validos: registro['Tel_Formateado'] = " | ".join(validos)
-        elif invalidos: registro['Tel_Formateado'] = invalidos[0]
-        else: registro['Tel_Formateado'] = "Sin número"
         data_procesada.append(registro)
         if not registro['Es_Valido']: LISTA_OBSERVADOS.append(registro)
         

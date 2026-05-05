@@ -410,7 +410,8 @@ class WoodToolsApp:
             tels = row.get('Telefonos_Raw', [])
             cod = row.get('Código de cliente', '')
             texto_cod = f"[{cod}] " if cod else ""
-            msg += f"• {texto_cod}{row['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
+            es_rev = " [ES REVENDEDOR]" if row.get('Es_Revendedor') else ""
+            msg += f"• {texto_cod}{row['Cliente']}{es_rev} -> {' | '.join(tels) if tels else 'Sin números'}\n"
         
         vent = tk.Toplevel(self.root)
         vent.title("Descartados (Filtrados)")
@@ -429,7 +430,7 @@ class WoodToolsApp:
                 tels = row.get('Telefonos_Raw', [])
                 datos_export.append({
                     "Código de cliente": row.get('Código de cliente', ''),
-                    "Nombre": row['Cliente'],
+                    "Nombre": row['Cliente'] + (" [Revendedor]" if row.get('Es_Revendedor') else ""),
                     "Número": " | ".join(tels) if tels else "Sin número"
                 })
                 
@@ -965,6 +966,8 @@ class WoodToolsApp:
         id_tanda_actual = mainCode.hora_arg().strftime("TANDA_%Y%m%d_%H%M%S")
         tot = len(df); ok = 0; err = 0; hubo_error_servidor = False; hubo_error_cliente = False
         
+        numeros_ya_enviados = set()
+        
         for i, (_, row) in enumerate(df.iterrows()):
             if self.cancelar_envio: break
             self.root.after(0, lambda x=i: self.lbl_progreso.config(text=f"Cliente {x+1}/{tot}...", fg="blue", bg=COLOR_PANELES))
@@ -985,7 +988,7 @@ class WoodToolsApp:
             url_render = f"{URL_SERVIDOR_RENDER}/asignar_vendedor"
             try: 
                 requests.post(url_render, json={
-                    "cliente": row['Telefonos_Validos'][0], 
+                    "cliente": row['Telefonos_Validos'][0] if row['Telefonos_Validos'] else "", 
                     "vendedor_tel": tel_v,
                     "tipo_campana": tipo,
                     "subtipo": params.get('subtipo_novedad', ''),
@@ -995,6 +998,10 @@ class WoodToolsApp:
                 pass
 
             for t in row['Telefonos_Validos']:
+                if t in numeros_ya_enviados:
+                    continue
+                numeros_ya_enviados.add(t)
+
                 if self.cancelar_envio: break
                 res = False; tipo_error = ""
                 
