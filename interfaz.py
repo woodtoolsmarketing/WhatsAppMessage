@@ -1092,7 +1092,6 @@ class WoodToolsApp:
             except Exception as e:
                 print(f"Error conectando al servidor en la nube: {e}")
                 
-            # INYECCIÓN DE LA FILA ORGÁNICA (Se fija arriba de todo)
             if "ORGANICO" in datos_nube:
                 org = datos_nube["ORGANICO"]
                 iniciados = org.get("respondidos", 0)
