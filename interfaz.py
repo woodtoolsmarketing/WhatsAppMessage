@@ -10,6 +10,7 @@ import ctypes
 import urllib.parse
 import requests  
 import json
+import re
 from datetime import datetime, timedelta
 
 import mainCode 
@@ -76,13 +77,12 @@ class WoodToolsApp:
         btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
         
-        btn_derivados = tk.Button(frame_top, text="💬 Chats Abandonados", command=self.abrir_chats_derivados, bg="#9C27B0", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_derivados = tk.Button(frame_top, text="💬 Chats Pendientes", command=self.abrir_chats_derivados, bg="#9C27B0", fg="white", font=("Segoe UI", 10, "bold"))
         btn_derivados.pack(side=tk.LEFT, padx=10)
         
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
-        # --- PANEL CONTROL BOT INTELIGENTE (NUEVO) ---
         self.frame_bot_control = tk.Frame(frame_top, bg="white", padx=10, pady=2, highlightbackground="#ccc", highlightthickness=1)
         self.frame_bot_control.pack(side=tk.RIGHT, padx=20)
         
@@ -284,11 +284,11 @@ class WoodToolsApp:
         self.btn_toggle_bot.config(text=textos.get(self.config_bot_actual, "Error"))
 
     # ==========================================
-    # PANTALLA DE CHATS ABANDONADOS
+    # PANTALLA DE CHATS PENDIENTES
     # ==========================================
     def abrir_chats_derivados(self):
         vent = tk.Toplevel(self.root)
-        vent.title("Chats Abandonados / Requieren Atención")
+        vent.title("Chats Pendientes / Requieren Atención")
         vent.geometry("900x600")
         vent.configure(bg=COLOR_PANELES)
 
@@ -315,6 +315,7 @@ class WoodToolsApp:
         btn_resuelto.pack(fill="x")
 
         self.datos_chats_actuales = []
+        self.lista_indices_map = {}
 
         def cargar_datos():
             lista_chats.delete(0, tk.END)
@@ -339,14 +340,56 @@ class WoodToolsApp:
                 self.datos_chats_actuales = []
                 messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\nDetalle técnico: {str(e)}", parent=vent)
 
+            self.lista_indices_map.clear()
+
             if not self.datos_chats_actuales:
-                lista_chats.insert(tk.END, "✅ No hay chats abandonados.")
+                lista_chats.insert(tk.END, "✅ No hay chats pendientes.")
             else:
-                for d in self.datos_chats_actuales:
-                    nombre_vendedor = d['vendedor']
-                    for nombre, numeros in mainCode.DB_VENDEDORES.items():
-                        if d['vendedor'] in numeros: nombre_vendedor = nombre; break
-                    lista_chats.insert(tk.END, f"+{d['telefono']} ({nombre_vendedor})")
+                contactar = []
+                abandonados = []
+                for idx_data, d in enumerate(self.datos_chats_actuales):
+                    hist_str = json.dumps(d.get('historial', []))
+                    
+                    agendado_match = re.search(r'\[AGENDADO:\s*(.*?)\]', hist_str, re.IGNORECASE)
+                    if agendado_match:
+                        info_agendado = agendado_match.group(1)
+                        contactar.append((idx_data, d, info_agendado))
+                    else:
+                        abandonados.append((idx_data, d))
+
+                idx_lb = 0
+                if contactar:
+                    lista_chats.insert(tk.END, "📅 CONTACTAR EL DÍA:")
+                    lista_chats.itemconfig(idx_lb, {'fg': 'white', 'bg': '#2196F3'})
+                    idx_lb += 1
+                    for idx_data, d, info in contactar:
+                        nombre_vendedor = d.get('vendedor', 'Sin asignar')
+                        for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                            if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
+                        
+                        lista_chats.insert(tk.END, f"  📌 {info}")
+                        self.lista_indices_map[idx_lb] = idx_data
+                        idx_lb += 1
+                        
+                        lista_chats.insert(tk.END, f"      Vend: {nombre_vendedor}")
+                        self.lista_indices_map[idx_lb] = idx_data
+                        idx_lb += 1
+
+                if abandonados:
+                    if contactar:
+                        lista_chats.insert(tk.END, "")
+                        lista_chats.itemconfig(idx_lb, {'bg': COLOR_PANELES})
+                        idx_lb += 1
+                    lista_chats.insert(tk.END, "👻 ABANDONADOS:")
+                    lista_chats.itemconfig(idx_lb, {'fg': 'white', 'bg': '#FF9800'})
+                    idx_lb += 1
+                    for idx_data, d in abandonados:
+                        nombre_vendedor = d.get('vendedor', 'Sin asignar')
+                        for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                            if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
+                        lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
+                        self.lista_indices_map[idx_lb] = idx_data
+                        idx_lb += 1
 
             btn_actualizar.config(state="normal", text="🔄 Actualizar")
 
@@ -356,7 +399,10 @@ class WoodToolsApp:
             sel = lista_chats.curselection()
             if not sel or not self.datos_chats_actuales: return
             idx = sel[0]
-            chat_data = self.datos_chats_actuales[idx]
+            if idx not in getattr(self, 'lista_indices_map', {}): return
+            
+            real_idx = self.lista_indices_map[idx]
+            chat_data = self.datos_chats_actuales[real_idx]
             
             txt_chat.config(state="normal")
             txt_chat.delete("1.0", tk.END)
@@ -365,10 +411,10 @@ class WoodToolsApp:
             txt_chat.insert(tk.END, f"📅 Fecha de derivación: {chat_data['fecha']}\n")
             txt_chat.insert(tk.END, "-"*50 + "\n\n")
             
-            for msg in chat_data['historial']:
-                role = "🤖 BOT" if msg['role'] == 'model' else "👤 CLIENTE"
-                text = msg['parts'][0]
-                if "Eres el asistente virtual" in text: continue
+            for msg in chat_data.get('historial', []):
+                role = "🤖 BOT" if msg.get('role') == 'model' else "👤 CLIENTE"
+                text = msg.get('parts', [''])[0]
+                if "Eres el asistente virtual" in text or "BASE_CONOCIMIENTO" in text: continue
                 txt_chat.insert(tk.END, f"{role}:\n{text}\n\n")
                 
             txt_chat.config(state="disabled")
@@ -380,15 +426,13 @@ class WoodToolsApp:
             sel = lista_chats.curselection()
             if not sel or not self.datos_chats_actuales: return
             idx = sel[0]
-            tel = self.datos_chats_actuales[idx]['telefono']
+            if idx not in getattr(self, 'lista_indices_map', {}): return
+            
+            real_idx = self.lista_indices_map[idx]
+            tel = self.datos_chats_actuales[real_idx]['telefono']
             try:
                 requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados/{tel}")
-                lista_chats.delete(idx)
-                self.datos_chats_actuales.pop(idx)
-                txt_chat.config(state="normal")
-                txt_chat.delete("1.0", tk.END)
-                txt_chat.config(state="disabled")
-                btn_resuelto.config(state="disabled")
+                cargar_datos() 
                 messagebox.showinfo("Éxito", "El chat fue marcado como resuelto y eliminado de la lista.", parent=vent)
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo borrar el chat de la base de datos.\nDetalle: {str(e)}", parent=vent)
@@ -423,7 +467,6 @@ class WoodToolsApp:
         t.insert("1.0", msg)
         t.config(state="disabled")
 
-        # --- NUEVA FUNCIÓN PARA EXPORTAR A EXCEL ---
         def exportar_descartes_excel():
             datos_export = []
             for _, row in df_descartados.iterrows():
