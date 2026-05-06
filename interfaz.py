@@ -284,113 +284,134 @@ class WoodToolsApp:
         self.btn_toggle_bot.config(text=textos.get(self.config_bot_actual, "Error"))
 
     # ==========================================
-    # PANTALLA DE CHATS PENDIENTES
+    # PANTALLA DE CHATS PENDIENTES / ABANDONADOS
     # ==========================================
     def abrir_chats_derivados(self):
         vent = tk.Toplevel(self.root)
         vent.title("Chats Pendientes / Requieren Atención")
-        vent.geometry("900x600")
-        vent.configure(bg=COLOR_PANELES)
+        vent.geometry("1000x700")
+        vent.configure(bg="white")
 
-        frame_izq = tk.Frame(vent, width=300, bg=COLOR_PANELES)
+        frame_izq = tk.Frame(vent, width=320, bg="white")
         frame_izq.pack(side="left", fill="y", padx=10, pady=10)
+        frame_izq.pack_propagate(False)
 
-        frame_der = tk.Frame(vent, bg=COLOR_PANELES)
+        frame_der = tk.Frame(vent, bg="white")
         frame_der.pack(side="right", fill="both", expand=True, padx=10, pady=10)
 
-        frame_lista_top = tk.Frame(frame_izq, bg=COLOR_PANELES)
-        frame_lista_top.pack(fill="x", pady=(0, 5))
-        tk.Label(frame_lista_top, text="Lista de Clientes", bg=COLOR_PANELES, font=("Segoe UI", 11, "bold")).pack(side="left")
-        btn_actualizar = tk.Button(frame_lista_top, text="🔄 Actualizar", bg="#2196F3", fg="white", font=("Arial", 9, "bold"))
+        # IZQUIERDA: Header y Pestañas
+        tk.Label(frame_izq, text="Lista de Clientes", bg="white", font=("Arial", 14, "bold")).pack(anchor="w", pady=(0, 5))
+        
+        frame_botones_tabs = tk.Frame(frame_izq, bg="white")
+        frame_botones_tabs.pack(fill="x", pady=(0, 5))
+        
+        self.btn_tab_pendientes = tk.Button(frame_botones_tabs, text="Pendientes", bg="#ff4c4c", fg="black", font=("Arial", 9, "bold"), relief="solid", bd=2)
+        self.btn_tab_pendientes.pack(side="left", expand=True, fill="x", padx=(0,2))
+        
+        self.btn_tab_agendados = tk.Button(frame_botones_tabs, text="Hablar más adelante", bg="#d373ff", fg="black", font=("Arial", 9, "bold"), relief="solid", bd=1)
+        self.btn_tab_agendados.pack(side="left", expand=True, fill="x", padx=(2,0))
+
+        lista_chats = tk.Listbox(frame_izq, font=("Arial", 11), relief="solid", bd=1, highlightthickness=0)
+        lista_chats.pack(fill="both", expand=True)
+
+        # DERECHA: Header, Actualizar y Chat
+        frame_der_top = tk.Frame(frame_der, bg="white")
+        frame_der_top.pack(fill="x", pady=(0, 5))
+        
+        tk.Label(frame_der_top, text="Historial del Chat", bg="white", font=("Arial", 12, "bold")).pack(side="left")
+        
+        btn_actualizar = tk.Button(frame_der_top, text="🔄 Actualizar", bg="#2196F3", fg="white", font=("Arial", 9, "bold"), relief="flat", padx=10)
         btn_actualizar.pack(side="right")
 
-        lista_chats = tk.Listbox(frame_izq, font=("Arial", 11))
-        lista_chats.pack(fill="both", expand=True, pady=5)
-
-        tk.Label(frame_der, text="Historial del Chat", bg=COLOR_PANELES, font=("Segoe UI", 11, "bold")).pack(anchor="w")
-        txt_chat = tk.Text(frame_der, font=("Arial", 11), wrap="word", state="disabled")
+        txt_chat = tk.Text(frame_der, font=("Arial", 11), wrap="word", state="disabled", relief="flat", highlightbackground="#ccc", highlightthickness=1)
         txt_chat.pack(fill="both", expand=True, pady=(0, 10))
 
-        btn_resuelto = tk.Button(frame_der, text="✅ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("bold", 11), state="disabled")
+        btn_resuelto = tk.Button(frame_der, text="☑ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("Arial", 11, "bold"), state="disabled", relief="flat", pady=8)
         btn_resuelto.pack(fill="x")
 
+        # --- Lógica de Pestañas y Listas ---
         self.datos_chats_actuales = []
+        self.datos_abandonados = []
+        self.datos_agendados = []
+        self.vista_actual = "pendientes"
         self.lista_indices_map = {}
 
-        def cargar_datos():
+        def cambiar_vista(vista):
+            self.vista_actual = vista
+            if vista == "pendientes":
+                self.btn_tab_pendientes.config(bd=2, relief="solid")
+                self.btn_tab_agendados.config(bd=1, relief="ridge")
+            else:
+                self.btn_tab_pendientes.config(bd=1, relief="ridge")
+                self.btn_tab_agendados.config(bd=2, relief="solid")
+            actualizar_listbox()
+
+        self.btn_tab_pendientes.config(command=lambda: cambiar_vista("pendientes"))
+        self.btn_tab_agendados.config(command=lambda: cambiar_vista("agendados"))
+
+        def actualizar_listbox():
             lista_chats.delete(0, tk.END)
+            self.lista_indices_map.clear()
             txt_chat.config(state="normal")
             txt_chat.delete("1.0", tk.END)
             txt_chat.config(state="disabled")
             btn_resuelto.config(state="disabled")
-            btn_actualizar.config(state="disabled", text="⏳ Cargando...")
+            
+            if self.vista_actual == "pendientes":
+                lista_chats.insert(tk.END, "🕰️ ABANDONADOS:")
+                lista_chats.itemconfig(0, {'fg': 'white', 'bg': '#FF9800'})
+                idx_lb = 1
+                for real_idx, d in self.datos_abandonados:
+                    nombre_vendedor = d.get('vendedor', 'Sin asigna')
+                    for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                        if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
+                    lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
+                    self.lista_indices_map[idx_lb] = real_idx
+                    idx_lb += 1
+            else:
+                lista_chats.insert(tk.END, "📅 CONTACTAR EL DÍA:")
+                lista_chats.itemconfig(0, {'fg': 'white', 'bg': '#2196F3'})
+                idx_lb = 1
+                for real_idx, d, info in self.datos_agendados:
+                    nombre_vendedor = d.get('vendedor', 'Sin asigna')
+                    for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                        if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
+                    lista_chats.insert(tk.END, f"  📌 {info}")
+                    self.lista_indices_map[idx_lb] = real_idx
+                    idx_lb += 1
+                    lista_chats.insert(tk.END, f"      +{d['telefono']} ({nombre_vendedor})")
+                    self.lista_indices_map[idx_lb] = real_idx
+                    idx_lb += 1
+
+        def cargar_datos():
+            btn_actualizar.config(state="disabled", text="⏳...")
             vent.update()
 
             try:
                 res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados", timeout=30)
                 if res.status_code == 200:
-                    self.datos_chats_actuales = res.json()
+                    datos_crudos = res.json()
                 else:
-                    self.datos_chats_actuales = []
-                    messagebox.showerror("Error", f"El servidor respondió con código de error {res.status_code}.\nRevisá los logs en Render.", parent=vent)
-            except requests.exceptions.Timeout:
-                self.datos_chats_actuales = []
-                messagebox.showerror("Aviso", "El servidor de Render tardó mucho en responder.\nPor favor, intentá de nuevo en 30 segundos.", parent=vent)
+                    datos_crudos = []
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
             except Exception as e:
-                self.datos_chats_actuales = []
-                messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\nDetalle técnico: {str(e)}", parent=vent)
+                datos_crudos = []
+                messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
 
-            self.lista_indices_map.clear()
-
-            if not self.datos_chats_actuales:
-                lista_chats.insert(tk.END, "✅ No hay chats pendientes.")
-            else:
-                contactar = []
-                abandonados = []
-                for idx_data, d in enumerate(self.datos_chats_actuales):
-                    hist_str = json.dumps(d.get('historial', []))
+            self.datos_chats_actuales = datos_crudos
+            self.datos_abandonados = []
+            self.datos_agendados = []
+            
+            for idx_data, d in enumerate(datos_crudos):
+                hist_str = json.dumps(d.get('historial', []))
+                agendado_match = re.search(r'\[AGENDADO:\s*(.*?)\]', hist_str, re.IGNORECASE)
+                if agendado_match:
+                    info_agendado = agendado_match.group(1)
+                    self.datos_agendados.append((idx_data, d, info_agendado))
+                else:
+                    self.datos_abandonados.append((idx_data, d))
                     
-                    agendado_match = re.search(r'\[AGENDADO:\s*(.*?)\]', hist_str, re.IGNORECASE)
-                    if agendado_match:
-                        info_agendado = agendado_match.group(1)
-                        contactar.append((idx_data, d, info_agendado))
-                    else:
-                        abandonados.append((idx_data, d))
-
-                idx_lb = 0
-                if contactar:
-                    lista_chats.insert(tk.END, "📅 CONTACTAR EL DÍA:")
-                    lista_chats.itemconfig(idx_lb, {'fg': 'white', 'bg': '#2196F3'})
-                    idx_lb += 1
-                    for idx_data, d, info in contactar:
-                        nombre_vendedor = d.get('vendedor', 'Sin asignar')
-                        for nombre, numeros in mainCode.DB_VENDEDORES.items():
-                            if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
-                        
-                        lista_chats.insert(tk.END, f"  📌 {info}")
-                        self.lista_indices_map[idx_lb] = idx_data
-                        idx_lb += 1
-                        
-                        lista_chats.insert(tk.END, f"      Vend: {nombre_vendedor}")
-                        self.lista_indices_map[idx_lb] = idx_data
-                        idx_lb += 1
-
-                if abandonados:
-                    if contactar:
-                        lista_chats.insert(tk.END, "")
-                        lista_chats.itemconfig(idx_lb, {'bg': COLOR_PANELES})
-                        idx_lb += 1
-                    lista_chats.insert(tk.END, "👻 ABANDONADOS:")
-                    lista_chats.itemconfig(idx_lb, {'fg': 'white', 'bg': '#FF9800'})
-                    idx_lb += 1
-                    for idx_data, d in abandonados:
-                        nombre_vendedor = d.get('vendedor', 'Sin asignar')
-                        for nombre, numeros in mainCode.DB_VENDEDORES.items():
-                            if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
-                        lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
-                        self.lista_indices_map[idx_lb] = idx_data
-                        idx_lb += 1
-
+            actualizar_listbox()
             btn_actualizar.config(state="normal", text="🔄 Actualizar")
 
         btn_actualizar.config(command=cargar_datos)
@@ -399,7 +420,7 @@ class WoodToolsApp:
             sel = lista_chats.curselection()
             if not sel or not self.datos_chats_actuales: return
             idx = sel[0]
-            if idx not in getattr(self, 'lista_indices_map', {}): return
+            if idx not in self.lista_indices_map: return
             
             real_idx = self.lista_indices_map[idx]
             chat_data = self.datos_chats_actuales[real_idx]
@@ -415,7 +436,10 @@ class WoodToolsApp:
                 role = "🤖 BOT" if msg.get('role') == 'model' else "👤 CLIENTE"
                 text = msg.get('parts', [''])[0]
                 if "Eres el asistente virtual" in text or "BASE_CONOCIMIENTO" in text: continue
-                txt_chat.insert(tk.END, f"{role}:\n{text}\n\n")
+                # Limpiar etiqueta oculta para que el operador no la vea en el chat
+                text_clean = re.sub(r'\[AGENDADO:\s*.*?\]', '', text, flags=re.IGNORECASE).strip()
+                if text_clean:
+                    txt_chat.insert(tk.END, f"{role}:\n{text_clean}\n\n")
                 
             txt_chat.config(state="disabled")
             btn_resuelto.config(state="normal")
@@ -424,18 +448,17 @@ class WoodToolsApp:
 
         def marcar_resuelto():
             sel = lista_chats.curselection()
-            if not sel or not self.datos_chats_actuales: return
+            if not sel: return
             idx = sel[0]
-            if idx not in getattr(self, 'lista_indices_map', {}): return
+            if idx not in self.lista_indices_map: return
             
             real_idx = self.lista_indices_map[idx]
             tel = self.datos_chats_actuales[real_idx]['telefono']
             try:
                 requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados/{tel}")
                 cargar_datos() 
-                messagebox.showinfo("Éxito", "El chat fue marcado como resuelto y eliminado de la lista.", parent=vent)
             except Exception as e:
-                messagebox.showerror("Error", f"No se pudo borrar el chat de la base de datos.\nDetalle: {str(e)}", parent=vent)
+                messagebox.showerror("Error", f"No se pudo borrar el chat.\nDetalle: {str(e)}", parent=vent)
 
         btn_resuelto.config(command=marcar_resuelto)
 
