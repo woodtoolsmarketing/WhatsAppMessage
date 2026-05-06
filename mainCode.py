@@ -7,586 +7,1080 @@ import sqlite3
 import re
 from datetime import datetime, timedelta
 import gspread
+from flask import Flask, request, jsonify, redirect
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request 
+import google.generativeai as genai
+import json
+import psycopg2 
+from psycopg2 import pool 
+import io
+from PIL import Image
+import threading
+from threading import Lock
+from apscheduler.schedulers.background import BackgroundScheduler
+import unicodedata
+import time
+
+app = Flask(__name__)
 
 # ==========================================
-# CONFIGURACIÓN DE LA API DE WHATSAPP Y SHEETS
+# CONFIGURACIÓN SEGURA (Inteligente)
 # ==========================================
-CLOUD_API_TOKEN = "EAAUkLctR4q0BQ8mcvr7YtqEacloCMCDHq1AY8VE0gc0ZBIIZBboTSCSEIEOQQKbNtfD7i0HwqiJvnd9FZCdH27rlBVsOXer1Qmlx3N5GAMhO6FmRNmYwOuxCKcJAgqo9Xy8IwtiQcZCFcuJ2fIMQnO7mPvBjEYrAgCDs7eMyn1lZAT7aDaJ8SKG5I1cp7yAZDZD"
-PHONE_NUMBER_ID = "1041050652417644"
-VERSION = "v17.0"
-BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
-URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
+posibles_rutas = [
+    "/etc/secrets/tokens.json",
+    "/etc/secrets/token.json",
+    "tokens.json",
+    "token.json"
+]
 
+ruta_correcta = None
+for ruta in posibles_rutas:
+    if os.path.exists(ruta):
+        ruta_correcta = ruta
+        break
+
+try:
+    if ruta_correcta:
+        with open(ruta_correcta, 'r') as f:
+            credenciales_api = json.load(f)
+    else:
+        credenciales_api = {}
+        print("⚠️ No se encontró ningún archivo de tokens. Se intentará usar Variables de Entorno.")
+        
+    TOKEN_DE_VERIFICACION = credenciales_api.get("TOKEN_DE_VERIFICACION", "")
+    CLOUD_API_TOKEN = credenciales_api.get("CLOUD_API_TOKEN", "")
+    PHONE_NUMBER_ID = credenciales_api.get("PHONE_NUMBER_ID", "")
+    GEMINI_API_KEY = credenciales_api.get("GEMINI_API_KEY", "")
+    DATABASE_URL = credenciales_api.get("DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+    
+    if not DATABASE_URL:
+        print("❌ ERROR FATAL: No se detectó la DATABASE_URL de Neon. Revisa tu archivo json en Render.")
+        
+except Exception as e:
+    print(f"⚠️ ATENCIÓN: Error procesando credenciales: {e}")
+    TOKEN_DE_VERIFICACION = CLOUD_API_TOKEN = PHONE_NUMBER_ID = GEMINI_API_KEY = DATABASE_URL = ""
+
+genai.configure(api_key=GEMINI_API_KEY)
 NOMBRE_HOJA = "Base de datos wt"
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+RUTA_CREDENCIALES = "/etc/secrets/credenciales.json" if os.path.exists("/etc/secrets/credenciales.json") else "credenciales.json"
 
 # ==========================================
-# LÓGICA DE CONTROL DEL BOT INTELIGENTE
+# MAGIA ANTI-CHOQUES Y SISTEMA DE COLAS
 # ==========================================
-def obtener_estado_bot_nube():
-    """Consulta al servidor de Render el estado actual del bot"""
-    try:
-        res = requests.get(f"{URL_SERVIDOR_RENDER}/estado_bot", timeout=10)
-        if res.status_code == 200:
-            return res.json()
-        return None
-    except:
-        return None
+db_pool = None
+try:
+    db_pool = psycopg2.pool.SimpleConnectionPool(1, 10, DATABASE_URL, sslmode='require')
+    if db_pool:
+        print("✅ Pool de conexiones a PostgreSQL creado exitosamente.")
+except Exception as e:
+    print(f"❌ Error al conectar a PostgreSQL: {e}")
 
-def cambiar_estado_bot_nube(nuevo_estado):
-    """Envía la orden al servidor para cambiar el modo ('AUTO', 'ON', 'OFF')"""
-    try:
-        res = requests.post(f"{URL_SERVIDOR_RENDER}/estado_bot", 
-                            json={"configuracion": nuevo_estado}, timeout=10)
-        return res.status_code == 200
-    except:
-        return False
+chat_locks = {}
+locks_lock = Lock()
+processed_msg_ids = set()
 
-# ==========================================
-# LÓGICA DE RUTAS Y BASE DE DATOS LOCAL
-# ==========================================
+def get_chat_lock(telefono):
+    with locks_lock:
+        if telefono not in chat_locks:
+            chat_locks[telefono] = Lock()
+        return chat_locks[telefono]
+
 def hora_arg():
     """Devuelve la hora actual en Argentina (UTC-3)"""
     return datetime.utcnow() - timedelta(hours=3)
 
-def obtener_ruta_recurso(ruta_relativa):
-    if getattr(sys, 'frozen', False):
-        ruta_base = sys._MEIPASS
-    else:
-        ruta_base = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(ruta_base, ruta_relativa)
-
-def obtener_ruta_persistente(nombre_archivo):
-    if getattr(sys, 'frozen', False):
-        return os.path.join(os.path.dirname(sys.executable), nombre_archivo)
-    else:
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), nombre_archivo)
-
-ARCHIVO_DB = obtener_ruta_persistente("historial_campanas.db") 
-ARCHIVO_TOKEN = obtener_ruta_persistente("token.json")
-
-def inicializar_db():
-    try:
-        conn = sqlite3.connect(ARCHIVO_DB)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS historial (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tanda_id TEXT,
-                fecha_hora TEXT,
-                cliente TEXT,
-                telefono TEXT,
-                vendedor_asignado TEXT,
-                tipo_campana TEXT,
-                herramienta TEXT,
-                estado_envio TEXT,
-                estado_tanda TEXT
-            )
-        ''')
-        try: cursor.execute('ALTER TABLE historial ADD COLUMN tanda_id TEXT')
-        except sqlite3.OperationalError: pass
-        try: cursor.execute('ALTER TABLE historial ADD COLUMN estado_tanda TEXT')
-        except sqlite3.OperationalError: pass
-        try: cursor.execute('ALTER TABLE historial ADD COLUMN total_base INTEGER DEFAULT 0')
-        except sqlite3.OperationalError: pass
-        conn.commit(); conn.close()
-    except Exception as e: print(f"Error iniciando DB: {e}")
-
-def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta, estado_individual, total_base=0):
-    try:
-        conn = sqlite3.connect(ARCHIVO_DB)
-        cursor = conn.cursor()
-        fecha = hora_arg().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute('''
-            INSERT INTO historial (tanda_id, fecha_hora, cliente, telefono, vendedor_asignado, tipo_campana, herramienta, estado_envio, estado_tanda, total_base)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (tanda_id, fecha, cliente, telefono, vendedor, tipo, herramienta, estado_individual, "PROCESANDO", total_base))
-        conn.commit(); conn.close()
-    except Exception as e: print(f"Error guardando en DB: {e}")
-
-def actualizar_estado_tanda(tanda_id, estado_final):
-    try:
-        conn = sqlite3.connect(ARCHIVO_DB)
-        cursor = conn.cursor()
-        cursor.execute('UPDATE historial SET estado_tanda = ? WHERE tanda_id = ?', (estado_final, tanda_id))
-        conn.commit(); conn.close()
-    except Exception as e: print(f"Error actualizando tanda: {e}")
-
-def obtener_tandas_campanas():
-    try:
-        conn = sqlite3.connect(ARCHIVO_DB)
-        df = pd.read_sql_query('''
-            SELECT tanda_id, tipo_campana, vendedor_asignado, 
-                   MIN(fecha_hora) as fecha_inicio, COUNT(id) as total_msgs,
-                   MAX(estado_tanda) as estado_tanda, substr(fecha_hora, 1, 7) as mes,
-                   MAX(total_base) as total_base
-            FROM historial WHERE tanda_id IS NOT NULL
-            GROUP BY tanda_id ORDER BY fecha_inicio DESC
-        ''', conn)
-        conn.close()
-        return df.to_dict('records')
-    except Exception as e: return []
-
-def obtener_datos_reporte_por_tandas(lista_tandas):
-    if not lista_tandas: return pd.DataFrame()
-    try:
-        conn = sqlite3.connect(ARCHIVO_DB)
-        placeholders = ','.join('?' * len(lista_tandas))
-        query = f"SELECT * FROM historial WHERE tanda_id IN ({placeholders}) ORDER BY fecha_hora ASC"
-        df = pd.read_sql_query(query, conn, params=lista_tandas)
-        conn.close()
-        return df
-    except Exception as e:
-        print(f"Error armando el reporte detallado: {e}")
-        return pd.DataFrame()
-
-# ==========================================
-# PLANTILLAS Y VENDEDORES
-# ==========================================
-PLANTILLA_PROMOS = "oferta_top_3"
-PLANTILLA_RESCATE = "reactivacion_cliente"
-PLANTILLA_GIRA = "aviso_visita_vendedor"
-PLANTILLA_RECOTIZACION = "recotizacion_prospecto" 
-PLANTILLA_NOVEDADES = "aviso_novedades_wt"
-PLANTILLA_PERSONALIZADO = "contacto_personalizado_wt"
-
-DB_VENDEDORES = {
-    "Valentín": ["5491145394279"], 
-    "Carlos": ["5491165630406"], 
-    "Emmanuel": ["5491157528428"],
-    "Ariel": ["5491134811771"],
-    "Roberto": ["5491164591316"],
-    "Nicolas": ["5491157528427"],
-    "Ezequiel": ["5491153455274"],
-    "Alan": ["5491156321012"],
-    "Luis": ["5491168457778"]
-}
-
-REVENDEDORES_CODIGOS = {
-    "4652": "Abalos Esteban",
-    "2253": "Acinar",
-    "14285": "Acosta Hernan Dario Herrajes tafildel valle",
-    "7195": "Afilacion Soriano",
-    "4373": "Afipar",
-    "1889": "Aldo Rodruguez /Idecort",
-    "1789": "Alonso Matias",
-    "11858": "ALENKA GRACIELA",
-    "10344": "Arbelaiz",
-    "11699": "ANTONIJEVIC IVAN DANIEL",
-    "9239": "Barnes problemático pagar",
-    "12394": "Battaller Estebam",
-    "11785": "Bevacqua Manuel",
-    "12430": "BertoLazzi Alejandra",
-    "905": "Bidinost",
-    "9931": "BIMETAL",
-    "9288": "Blanco Maq. (Staffolani Roman)",
-    "11611": "COOP.DE TRAB EL CARANDA LIM F.",
-    "1558": "Jose Blas Pinamar",
-    "879": "Ciganoto",
-    "11775": "Braga Alicia ex lucich (6412)",
-    "214": "setefratti",
-    "10679": "BREDICE MAURO DANIEL",
-    "12515": "Bhoor AIA",
-    "10428": "Bruni Marcos",
-    "7933": "Bulonera Torcuato",
-    "94": "Cabello Susana (Af del sur Damian)",
-    "2514": "Capovilla Ernesto",
-    "906": "Catavorello",
-    "1538": "Chiappa Sierras",
-    "11268": "DELBRE",
-    "3640": "TECNO L.D.",
-    "6626": "Dartamani Carlos",
-    "14639": "DUERO AFILADO( Cordoba)",
-    "2633": "Ellemberger` Edgar",
-    "6421": "Fisicaro Mauricio",
-    "2123": "Forti Oscar (Bruni)",
-    "9541": "Fraile Julio",
-    "228": "FREMECH Ariel Gomez",
-    "14181": "Fernadez Jorge Luis El Rey de la melamina",
-    "2691": "Grodnienski Max (Abraham Maq.)",
-    "1092": "IMAD S.R.L.",
-    "9645": "Javier Haedo",
-    "5789": "Keil Gerardo vendedor 32",
-    "7986": "Kranjac Hnos (afilador)",
-    "4446": "Kurtz Adolfo",
-    "8907": "La casa de las Herramientas",
-    "14791": "LEPRI MARIANO",
-    "3044": "lagomarcino",
-    "1369": "Mancardi(afilador)",
-    "841": "Maq Caseros",
-    "5809": "Maq Picotto Mario",
-    "12043": "MACHENA SRL DI CESARE",
-    "8966": "Martiren Ruben(glorioso 10622)",
-    "138": "Met Picotto (edgardo)",
-    "6494": "Monica- Todo Filo",
-    "1214": "MULTIPLACAS SA",
-    "5677": "Moscuzza Daniel",
-    "2569": "Mutilva",
-    "691": "NEA GESTION S.R.L.",
-    "7851": "Palavecino",
-    "820": "Paoletti",
-    "2591": "Piccini Martin (Afilados Postai)",
-    "8467": "Riquelme Luis (bariloche)",
-    "7317": "Romero Guadalberto/Garcia H",
-    "15904": "EDMUNDO Y ANDRES LACONI",
-    "136": "Rupper Hugo",
-    "8848": "S.P.M",
-    "9251": "Santana",
-    "12100": "Sergio martinez",
-    "10966": "SERVIMAD Ciccioli",
-    "5005": "Sierras Andinas(afilador y revendedor)",
-    "1676": "Sierras del Parana",
-    "13328": "Silva Nicolas Martin",
-    "5207": "Talleres Ciudadela",
-    "3138": "Taurus",
-    "4257": "TODO AFILADO VIZOSO",
-    "9360": "Torres Graciela",
-    "12631": "VADI PLAC",
-    "3023": "Vila",
-    "4682": "Waintrub",
-    "3730": "Wegiers Angel (Multiplacas)",
-    "7216": "Zaninovic",
-    "9766": "Zapico Sebastian",
-    "9220": "Zubizarreta Luis Alberto(afilador)",
-    "14481": "MAGARO SA (FERRETERIA)"
-}
-
-REVENDEDORES_NOMBRES = [
-    "BIRBA LEANDRO JORGE",
-    "Dutra Alexis Uruguay",
-    "Garcia Joaquin",
-    "IFRAN",
-    "Mastro Mauro hermanos",
-    "Oscar de casa nova",
-    "Sergio Pastre",
-    "PAIVA ESTEBAN",
-    "VIDELA RAUL ALEJANDRO"
-]
-
-LISTA_OBSERVADOS = []
-
-def obtener_telefono_vendedor(codigo_excel, indice_preferencia=0):
-    codigo = str(codigo_excel).strip()
-    if codigo == "0": return "5491145394279" if indice_preferencia == 0 else "5491165630406"
-    elif codigo in ["1", "302", "1/302"]: return "5491157528428"
-    else: return "5491145394279"
-
-def generar_link_whatsapp(tel, tipo_mensaje, datos_extra):
-    if tipo_mensaje == "Promociones": 
-        producto = datos_extra.get('herramienta', 'sierras circulares')
-        texto = f"Hola, me llegó el mensaje con la promoción de {producto} y quiero más información."
-    elif tipo_mensaje == "Rescate (Te extrañamos)": 
-        texto = "Hola, me llegó el mensaje de WhatsApp. Me gustaría ver el catálogo actualizado para reponer stock en mi taller."
-    elif tipo_mensaje == "Gira Vendedor": 
-        texto = f"Hola, vi que {datos_extra.get('vendedor_nombre', 'el vendedor')} va a estar por mi zona. Me gustaría coordinar una visita para hacer un pedido."
-    elif tipo_mensaje == "Novedades": 
-        texto = "Hola, vi el mensaje sobre los nuevos ingresos de stock y me gustaría conocer los modelos disponibles."
-    elif tipo_mensaje == "Recotización": 
-        texto = f"Hola, soy {datos_extra.get('cliente_nombre', 'un cliente')}. Me gustaría recibir una recotización actualizada, por favor."
-    elif tipo_mensaje == "Personalizado": 
-        texto = "Hola, vi el mensaje de WhatsApp y me gustaría hacer una consulta."
-    else: 
-        texto = "Hola, me contacto para realizar una consulta."
-        
-    msg_codificado = urllib.parse.quote(texto)
-    return f"https://api.whatsapp.com/send?phone={tel}&text={msg_codificado}"
-
-# ==========================================
-# LECTOR DESDE GOOGLE SHEETS Y RENOVACIÓN DE TOKEN
-# ==========================================
-def obtener_credenciales():
-    creds = None
-    if os.path.exists(ARCHIVO_TOKEN):
-        creds = Credentials.from_authorized_user_file(ARCHIVO_TOKEN, SCOPES)
-        
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try: creds.refresh(Request())
-            except Exception: creds = None
-                
-        if not creds or not creds.valid:
-            ruta_creds = obtener_ruta_recurso("credenciales.json")
-            if not os.path.exists(ruta_creds): return None
-            flow = InstalledAppFlow.from_client_secrets_file(ruta_creds, SCOPES)
-            creds = flow.run_local_server(port=0)
-            
-        with open(ARCHIVO_TOKEN, 'w') as token:
-            token.write(creds.to_json())
-            
-    return creds
-
-def aplicar_correcciones_texto(texto):
-    t = str(texto).strip()
-    t = re.sub(r'(?i)0a', '0-A', t)
-    t = re.sub(r'(?i)0b', '0-B', t)
-    return t
-
-def obtener_pestanas_disponibles():
-    try:
-        creds = obtener_credenciales()
-        if not creds: return ["Base de datos wt"]
-        gc = gspread.authorize(creds)
-        sh = gc.open(NOMBRE_HOJA)
-        return [ws.title for ws in sh.worksheets()]
-    except Exception: return ["Hoja 1"]
-
-def leer_desde_google_sheets(nombre_pestana=""):
-    try:
-        creds = obtener_credenciales()
-        if not creds: return []
-        gc = gspread.authorize(creds)
-        sh = gc.open(NOMBRE_HOJA)
-        
-        if nombre_pestana and nombre_pestana.lower() not in ["clientes", "prospectos"]:
-            try: ws = sh.worksheet(nombre_pestana)
-            except gspread.exceptions.WorksheetNotFound: ws = sh.sheet1
-        else: ws = sh.sheet1 
-        
-        datos_brutos = ws.get_all_values()
-        if len(datos_brutos) < 2: return []
-            
-        headers_brutos = datos_brutos[0] 
-        headers = [h.strip() if h.strip() != "" else f"Col_Vacia_{i}" for i, h in enumerate(headers_brutos)]
-        
-        es_formato_complejo = 'Primer número' in headers
-        data = datos_brutos[1:] if len(datos_brutos) > 1 else []
-        
-        df = pd.DataFrame(data, columns=headers)
-        df = df.fillna("")
-        registros = []
-        
-        for _, row in df.iterrows():
-            tels_raw = []
-            if es_formato_complejo:
-                for col in ['Primer número', 'Segundo número', 'Tercer número', 'Cuarto número', 'Quinto número']:
-                    if col in row and str(row[col]).strip():
-                        val_str_limpio = str(row[col]).strip().replace(" ", "").replace("-", "")
-                        val_num = ''.join(filter(str.isdigit, val_str_limpio))
-                        if not val_num.startswith("000") and val_num: tels_raw.append(val_str_limpio)
-                cliente_nom = str(row.get('Nombre', 'Cliente Sin Nombre')).strip() or "Cliente Sin Nombre"
-            else:
-                col_tel = 'Numero de Telefono' if 'Numero de Telefono' in row else ('Número' if 'Número' in row else ('Teléfono' if 'Teléfono' in row else None))
-                if col_tel and col_tel in row:
-                    num_raw_limpio = str(row[col_tel]).strip().replace(" ", "").replace("-", "")
-                    num_only = ''.join(filter(str.isdigit, num_raw_limpio))
-                    if not num_only.startswith("000") and num_only: tels_raw.append(num_raw_limpio)
-                cliente_nom = str(row.get('Cliente', row.get('Nombres', row.get('Nombre', 'Sin Nombre')))).strip() or "Sin Nombre"
-            
-            cod_cliente = aplicar_correcciones_texto(row.get('Código de cliente', row.get('Número de cliente', ''))).strip()
-            
-            # --- FILTRO DE REVENDEDORES ---
-            es_revendedor = False
-            if cod_cliente and cod_cliente in REVENDEDORES_CODIGOS:
-                es_revendedor = True
-            else:
-                for rev_nombre in REVENDEDORES_NOMBRES:
-                    if rev_nombre.lower() in cliente_nom.lower():
-                        es_revendedor = True
-                        break
-                        
-            if es_revendedor:
-                continue 
-            # ------------------------------
-            
-            if cliente_nom != "Sin Nombre" and cliente_nom != "Cliente Sin Nombre":
-                registros.append({
-                    'Código de cliente': cod_cliente,
-                    'Cliente': cliente_nom,
-                    'Zona': aplicar_correcciones_texto(row.get('Zona del cliente', row.get('Zona', '0'))) or '0',
-                    'Vendedor': str(row.get('Vendedor', '0')).strip() or '0',
-                    'Telefonos_Raw': tels_raw,
-                    'Fav_Temp': str(row.get('Producto por el que consultó', '')).strip()
-                })
-        return registros
-    except Exception: return []
-
-# ==========================================
-# LÓGICA DE DETECCIÓN DE TELÉFONOS
-# ==========================================
-def formatear_telefono(numero_raw):
-    num_str = str(numero_raw).replace(" ", "").replace("-", "")
-    num_str = ''.join(filter(str.isdigit, num_str))
-    
-    if not num_str: return ""
-    if num_str.startswith("549") and len(num_str) == 13: return num_str
-    if num_str.startswith("54") and len(num_str) == 12: return "549" + num_str[2:]
-    if num_str.startswith("549"): num_str = num_str[3:]
-    elif num_str.startswith("54"): num_str = num_str[2:]
-    if num_str.startswith("0"): num_str = num_str[1:]
-    
-    match_15 = re.match(r'^([1-3]\d{1,3})15(\d{6,8})$', num_str)
-    if match_15:
-        area = match_15.group(1); resto = match_15.group(2)
-        if len(area) + len(resto) == 10: return f"549{area}{resto}"
-        
-    if num_str.startswith("15") and len(num_str) == 10: return f"54911{num_str[2:]}"
-    if len(num_str) == 8 and num_str[0] in "234567": return f"54911{num_str}"
-    if len(num_str) == 10: return f"549{num_str}"
-    
-    return num_str
-
-def validar_formato_numero(numero_raw):
-    numero_fmt = formatear_telefono(numero_raw)
-    if not numero_fmt: return False, ""
-    if re.match(r'^549\d{10}$', numero_fmt): return True, numero_fmt
-    return False, numero_fmt
-
-def conectar_y_procesar(nombre_pestana=""):
-    global LISTA_OBSERVADOS
-    LISTA_OBSERVADOS = [] 
-    datos = leer_desde_google_sheets(nombre_pestana)
-    data_procesada = []
-    
-    for registro in datos:
-        raw_list = registro.get('Telefonos_Raw', [])
-        validos, invalidos = [], []
-        for raw_tel in raw_list:
-            es_valido, tel_fmt = validar_formato_numero(raw_tel)
-            if es_valido: validos.append(tel_fmt)
-            else: invalidos.append(raw_tel)
-            
-        registro['Telefonos_Validos'] = validos
-        registro['Telefonos_Invalidos'] = invalidos
-        registro['Es_Valido'] = len(validos) > 0 
-        
-        if validos: registro['Tel_Formateado'] = " | ".join(validos)
-        elif invalidos: registro['Tel_Formateado'] = invalidos[0]
-        else: registro['Tel_Formateado'] = "Sin número"
-        data_procesada.append(registro)
-        if not registro['Es_Valido']: LISTA_OBSERVADOS.append(registro)
-        
-    return pd.DataFrame(data_procesada)
-
-def revisar_numeros_problematicos():
-    global LISTA_OBSERVADOS
-    if not LISTA_OBSERVADOS: return "✅ Base limpia."
-    txt = f"--- {len(LISTA_OBSERVADOS)} DESCARTADOS ---\n"
-    for item in LISTA_OBSERVADOS:
-        tels = item.get('Telefonos_Raw', [])
-        txt += f"• {item['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
-    return txt
-
-def identificar_cols_productos(df): return ['Sierras', 'Cuchillas', 'Mechas', 'Fresas', 'Cabezales']
-
-def _enviar_request(data):
-    try:
-        headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}", "Content-Type": "application/json"}
-        res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data)
-        if res.status_code == 200: return True, "OK"
-        elif 400 <= res.status_code < 500: 
-            print("ERROR META:", res.json()) 
-            return False, "ERROR DEL CLIENTE"
-        else: return False, "ERROR DEL SERVIDOR" 
-    except Exception: return False, "ERROR DEL SERVIDOR"
-    
-def subir_imagen_whatsapp(ruta):
-    try:
-        headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}"}
-        files = {'file': (os.path.basename(ruta), open(ruta, 'rb'), 'image/jpeg')}
-        data = {'messaging_product': 'whatsapp'}
-        res = requests.post(f"{BASE_URL}/media", headers=headers, files=files, data=data)
-        if res.status_code == 200: return res.json()['id']
+def execute_db_query(query, params=(), commit=False, fetchone=False, fetchall=False, retries=1):
+    if not db_pool:
+        print("❌ No hay pool de conexiones disponible.")
         return None
-    except: return None
+        
+    for attempt in range(retries + 1):
+        conn = None
+        try:
+            conn = db_pool.getconn() 
+            res = None
+            with conn.cursor() as c:
+                c.execute(query, params)
+                if commit:
+                    conn.commit()
+                if fetchone:
+                    res = c.fetchone()
+                elif fetchall:
+                    res = c.fetchall()
+                else:
+                    res = c.rowcount
+            
+            db_pool.putconn(conn)
+            return res
+            
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            if conn: db_pool.putconn(conn, close=True)
+            if attempt == retries: return None
+        except Exception as e:
+            print(f"❌ Error en DB ejecutando '{query}': {e}")
+            if conn:
+                conn.rollback()
+                db_pool.putconn(conn)
+            return None
+
+def init_db():
+    try:
+        execute_db_query('''CREATE TABLE IF NOT EXISTS mensajes (id TEXT PRIMARY KEY, telefono TEXT, estado TEXT, fecha TIMESTAMP)''', commit=True)
+        execute_db_query('''CREATE TABLE IF NOT EXISTS chat_sesiones (telefono TEXT PRIMARY KEY, historial TEXT, ultima_interaccion TIMESTAMP)''', commit=True)
+        execute_db_query('''CREATE TABLE IF NOT EXISTS asignaciones_v2 (telefono_cliente TEXT PRIMARY KEY, numero_vendedor TEXT, tipo_campana TEXT, subtipo TEXT, tanda_id TEXT)''', commit=True)
+        execute_db_query('''CREATE TABLE IF NOT EXISTS metricas_campanas (tanda_id TEXT PRIMARY KEY, entregados INTEGER DEFAULT 0, leidos INTEGER DEFAULT 0, respondidos INTEGER DEFAULT 0, derivados INTEGER DEFAULT 0)''', commit=True)
+        execute_db_query('''CREATE TABLE IF NOT EXISTS tracking_metricas (tanda_id TEXT, telefono TEXT, evento TEXT, PRIMARY KEY(tanda_id, telefono, evento))''', commit=True)
+        execute_db_query('''CREATE TABLE IF NOT EXISTS chats_derivados (telefono TEXT PRIMARY KEY, vendedor TEXT, historial TEXT, fecha TIMESTAMP)''', commit=True)
+        execute_db_query('''CREATE TABLE IF NOT EXISTS configuracion (parametro TEXT PRIMARY KEY, valor TEXT)''', commit=True)
+        
+        try: execute_db_query("ALTER TABLE chat_sesiones ADD COLUMN advertido INTEGER DEFAULT 0", commit=True)
+        except Exception: pass 
+        try: execute_db_query("ALTER TABLE metricas_campanas ADD COLUMN derivados INTEGER DEFAULT 0", commit=True)
+        except Exception: pass 
+        try: execute_db_query("ALTER TABLE asignaciones_v2 ADD COLUMN fecha_asignacion TIMESTAMP", commit=True)
+        except Exception: pass 
+        try: execute_db_query("INSERT INTO metricas_campanas (tanda_id, entregados, leidos, respondidos, derivados) VALUES ('ORGANICO', 0, 0, 0, 0) ON CONFLICT (tanda_id) DO NOTHING", commit=True)
+        except Exception: pass
+        try: execute_db_query("INSERT INTO configuracion (parametro, valor) VALUES ('modo_bot', 'AUTO') ON CONFLICT (parametro) DO NOTHING", commit=True)
+        except Exception: pass
+            
+    except Exception as e:
+        print(f"Error crítico iniciando tablas: {e}")
+
+init_db()
 
 # ==========================================
-# MAGIA DE BOTONES: EXTRACTOR DE ENLACE DINÁMICO
+# CEREBRO: DETERMINAR MODO DE BOT
 # ==========================================
-def extraer_sufijo_dinamico(link_completo):
-    base = "https://woodtools-webhook.onrender.com/wa/"
-    if str(link_completo).startswith(base):
-        return link_completo[len(base):]
-    return link_completo
+def determinar_modo_bot():
+    res = execute_db_query("SELECT valor FROM configuracion WHERE parametro = 'modo_bot'", fetchone=True)
+    conf = res[0] if res else 'AUTO'
+    
+    if conf == 'ON': return "INTELIGENTE"
+    elif conf == 'OFF': return "BASICO"
+        
+    ahora = hora_arg()
+    if ahora.weekday() <= 4 and 8 <= ahora.hour < 17: return "BASICO"
+    else: return "INTELIGENTE"
+
+@app.route('/estado_bot', methods=['GET'])
+def obtener_estado_bot():
+    res = execute_db_query("SELECT valor FROM configuracion WHERE parametro = 'modo_bot'", fetchone=True)
+    conf = res[0] if res else 'AUTO'
+    modo_actual = determinar_modo_bot()
+    return jsonify({"configuracion": conf, "modo_actual": modo_actual}), 200
+
+@app.route('/estado_bot', methods=['POST'])
+def configurar_estado_bot():
+    data = request.json
+    nuevo_estado = data.get('configuracion', 'AUTO')
+    if nuevo_estado in ['AUTO', 'ON', 'OFF']:
+        execute_db_query("UPDATE configuracion SET valor = %s WHERE parametro = 'modo_bot'", (nuevo_estado,), commit=True)
+        return jsonify({"status": "ok", "configuracion": nuevo_estado}), 200
+    return jsonify({"error": "Estado inválido."}), 400
 
 # ==========================================
-# FUNCIONES DE ENVÍO DE PLANTILLAS
+# FUNCIONES BÁSICAS Y DE ENVÍO
 # ==========================================
-def enviar_promocion(tel, nombre, producto_promo, link, media_id): 
-    dynamic_url = extraer_sufijo_dinamico(link)
-    return _enviar_request({
-        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-                {"type": "body", "parameters": [
-                    {"type": "text", "text": str(nombre)}, 
-                    {"type": "text", "text": str(producto_promo)}
-                ]},
-                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
-                    {"type": "text", "text": dynamic_url}
-                ]}
-            ]
+def limpiar_numero(num): return ''.join(filter(str.isdigit, str(num)))
+
+def extraer_10_digitos(num):
+    solo_numeros = limpiar_numero(num)
+    return solo_numeros[-10:] if len(solo_numeros) >= 10 else solo_numeros
+
+def enviar_mensaje_whatsapp(telefono_destino, texto, link_boton=None):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+    headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}", "Content-Type": "application/json"}
+    
+    if link_boton:
+        data = {
+            "messaging_product": "whatsapp", "to": telefono_destino, "type": "interactive",
+            "interactive": {
+                "type": "cta_url", "body": { "text": texto },
+                "action": {
+                    "name": "cta_url",
+                    "parameters": { "display_text": "Hablar con asesor", "url": link_boton }
+                }
+            }
         }
-    })
+    else:
+        data = {"messaging_product": "whatsapp", "to": telefono_destino, "type": "text", "text": {"body": texto}}
+        
+    res = requests.post(url, headers=headers, json=data)
+    if res.status_code >= 400 and link_boton:
+        texto_fallback = f"{texto}\n\n👉 {link_boton}"
+        data_fallback = {"messaging_product": "whatsapp", "to": telefono_destino, "type": "text", "text": {"body": texto_fallback}}
+        requests.post(url, headers=headers, json=data_fallback)
 
-def enviar_rescate(tel, nom, prod, link, media_id): 
-    dynamic_url = extraer_sufijo_dinamico(link)
-    return _enviar_request({
-        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-                {"type": "body", "parameters": [
-                    {"type": "text", "text": str(nom)}, 
-                    {"type": "text", "text": str(prod)}
-                ]},
-                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
-                    {"type": "text", "text": dynamic_url}
-                ]}
+def descargar_imagen_whatsapp(media_id):
+    try:
+        url_meta = f"https://graph.facebook.com/v18.0/{media_id}"
+        headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}"}
+        res_info = requests.get(url_meta, headers=headers)
+        if res_info.status_code == 200:
+            media_url = res_info.json().get('url')
+            if media_url:
+                res_img = requests.get(media_url, headers=headers)
+                if res_img.status_code == 200: return Image.open(io.BytesIO(res_img.content))
+        return None
+    except Exception: return None
+
+def registrar_metrica(evento, telefono):
+    try:
+        tel_10 = extraer_10_digitos(telefono)
+        res = execute_db_query("SELECT tanda_id FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10,), fetchone=True)
+        if res and res[0]:
+            t_id = res[0]
+            execute_db_query("""
+                INSERT INTO tracking_metricas (tanda_id, telefono, evento) VALUES (%s, %s, %s) 
+                ON CONFLICT (tanda_id, telefono, evento) DO NOTHING
+            """, (t_id, tel_10, evento), commit=True)
+            if evento == 'delivered': execute_db_query("UPDATE metricas_campanas SET entregados = entregados + 1 WHERE tanda_id = %s", (t_id,), commit=True)
+            elif evento == 'read': execute_db_query("UPDATE metricas_campanas SET leidos = leidos + 1 WHERE tanda_id = %s", (t_id,), commit=True)
+            elif evento == 'responded': execute_db_query("UPDATE metricas_campanas SET respondidos = respondidos + 1 WHERE tanda_id = %s", (t_id,), commit=True)
+    except Exception: pass
+
+def bloquear_numero_en_sheets(telefono, max_retries=3):
+    try:
+        if not os.path.exists(RUTA_CREDENCIALES): return False
+        gc = gspread.service_account(filename=RUTA_CREDENCIALES)
+        for intento in range(max_retries):
+            try:
+                sh = gc.open(NOMBRE_HOJA)
+                for ws in sh.worksheets():
+                    celda = ws.find(telefono)
+                    if celda:
+                        ws.update_cell(celda.row, celda.col, f"0000{telefono}")
+                        return True
+                return False
+            except gspread.exceptions.APIError as e:
+                if e.response.status_code == 429: time.sleep(2 ** intento)
+                else: raise e
+    except Exception: pass
+
+# ==========================================
+# RUTINAS AISLADAS CON POOL
+# ==========================================
+def revisar_rutinas_de_tiempo():
+    try:
+        ahora = hora_arg()
+        hace_48_horas = ahora - timedelta(hours=48)
+        para_borrar = execute_db_query("SELECT id, telefono FROM mensajes WHERE estado='sent' AND fecha < %s", (hace_48_horas,), fetchall=True)
+        if para_borrar:
+            for msg_id, telefono in para_borrar:
+                bloquear_numero_en_sheets(telefono)
+                execute_db_query("DELETE FROM mensajes WHERE id=%s", (msg_id,), commit=True)
+                
+        execute_db_query("DELETE FROM asignaciones_v2 WHERE (fecha_asignacion < %s OR fecha_asignacion IS NULL) AND telefono_cliente NOT IN (SELECT telefono FROM chat_sesiones)", (hace_48_horas,), commit=True)
+            
+        hace_1_hora = ahora - timedelta(hours=1)
+        para_derivar = execute_db_query("SELECT telefono, historial FROM chat_sesiones WHERE ultima_interaccion < %s", (hace_1_hora,), fetchall=True)
+        if para_derivar:
+            for telefono, historial_str in para_derivar:
+                try:
+                    tel_10 = extraer_10_digitos(telefono)
+                    res_vend = execute_db_query("SELECT numero_vendedor, tipo_campana FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10,), fetchone=True)
+                    vendedor_asignado = res_vend[0] if res_vend else "Sin asignar"
+                    campana = res_vend[1] if res_vend else "Contacto Orgánico"
+                    historial = json.loads(historial_str)
+                    historial_limpio = historial[2:] if len(historial) >= 2 else historial
+                    
+                    execute_db_query("""
+                        INSERT INTO chats_derivados (telefono, vendedor, historial, fecha) VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (telefono) DO UPDATE SET historial=EXCLUDED.historial, fecha=EXCLUDED.fecha
+                    """, (telefono, vendedor_asignado, json.dumps(historial_limpio), hora_arg()), commit=True)
+
+                    ultimo_msg_cliente = "Sin mensajes recientes."
+                    for msg in reversed(historial_limpio):
+                        if msg.get("role") == "user":
+                            ultimo_msg_cliente = msg["parts"][0]
+                            break
+
+                    aviso_asesor = (
+                        f"🤖 *AVISO DEL BOT AUTOMÁTICO*\n\n"
+                        f"El cliente con número +{telefono} ingresó por la campaña *{campana}*, pero el chat expiró tras 1 hora de inactividad.\n\n"
+                        f"💬 *Último mensaje del cliente:*\n\"{ultimo_msg_cliente}\"\n\n"
+                        f"👉 *Acción requerida:* Por favor, revisa el panel de 'Chats Pendientes' en el sistema y contactalo."
+                    )
+                    
+                    if vendedor_asignado and vendedor_asignado != "Sin asignar" and vendedor_asignado != "5491145394279": 
+                        enviar_mensaje_whatsapp(vendedor_asignado, aviso_asesor)
+                    else:
+                        enviar_mensaje_whatsapp("5491145394279", aviso_asesor)
+
+                    aviso_cliente = "⚠️ ¡Hola! Como pasó 1 hora de inactividad sin respuesta, cerramos esta conversación automática. Tu asesor asignado te contactará a la brevedad. ¡Gracias!"
+                    enviar_mensaje_whatsapp(telefono, aviso_cliente)
+
+                    execute_db_query("DELETE FROM chat_sesiones WHERE telefono = %s", (telefono,), commit=True)
+                    execute_db_query("DELETE FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10,), commit=True)
+                except Exception as inner_e: print(f"Fallo derivando chat {telefono}: {inner_e}")
+    except Exception as e: print(f"Error general en rutinas de tiempo: {e}")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=revisar_rutinas_de_tiempo, trigger="interval", minutes=5)
+scheduler.start()
+
+# ==========================================
+# CEREBRO IA: LÓGICA CONDICIONAL Y ORGÁNICA (EXPERTO TÉCNICO)
+# ==========================================
+
+CATALOGO_IA_ESTATICO = """
+DICCIONARIO VISUAL Y TÉCNICO DE HERRAMIENTAS:
+
+[Ranuras] - Fresas Rectas HM:
+Cuerpo cilíndrico rojo. 4 a 6 insertos de HM rectangulares plateados soldados perpendiculares al eje. Esquinas de los insertos limpias a 90° sin elementos adicionales. Firma visual del corte: Ranura rectangular simple y limpia con paredes rectas y fondo plano.
+
+[Ranuras] - Fresas Rectas con Incisores HM:
+Cuerpo cilíndrico rojo. 4 a 6 cortantes rectos acompañados por pequeñas puntas extra sobresalientes en los extremos (incisores). Firma visual del corte: Canal rectangular idéntico a las rectas, pero los incisores garantizan ausencia total de astillado en los bordes superiores de la madera.
+
+[Ranuras] - Fresas para Ranurar Regulables HM:
+Herramienta compuesta por discos rojos apilados o segmentados con insertos rectangulares y 4 dientes incisores. Firma visual del corte: Ranura rectangular, rebaje o espiga en la madera cuyo ancho interior varía según la cantidad de discos o separación configurada.
+
+[Cepillado] - Cabezales Cepilladores HM:
+Cuerpo ancho tipo rodillo macizo. Posee una gran cantidad de pequeñas placas de HM (40 a 100 dientes) dispuestas en espiral o escalonadas alrededor del cilindro. Firma visual del corte: Rebaje ancho, extenso, liso y totally plano, ideal para cepillar caras anchas.
+
+[Ángulos] - Fresas en ángulo HM:
+Cuerpo rojo con 4 o 6 insertos de HM cuyas caras son marcadamente rectas pero inclinadas en diagonal (fuera del eje ortogonal). Firma visual del corte: Deja un plano inclinado, bisel o chanfle (ángulo alfa) limpio y recto en la arista de la tabla de madera.
+
+[Curvas] - Fresas 1/4 círculo cóncavo y convexo HM:
+Cuerpo rojo. La arista de corte tiene una única y simple curva de 90 grados (cuarto de círculo). Firma visual del corte: Mata o redondea una arista ortogonal creando una única curva convexa o cóncava que conecta dos planos rectos.
+
+[Curvas] - Fresas 1/2 círculo cóncavo y convexo HM:
+Cuerpo rojo. Arista de corte con un perfil curvo completo y simétrico de 180° en forma de "U" profunda (cóncava) o panza saliente (convexa). Firma visual del corte: Redondea completamente un canto (boleado en C) o talla una canaleta de media caña perfecta.
+
+[Molduras] - Zócalo Simple y Contramarco HM:
+Juego de fresas apilables (A y B). Cuerpo rojo macizo. Los insertos de HM presentan una silueta marcadamente asimétrica: una "ola" larga y extendida compuesta por un valle cóncavo profundo que sube tangencialmente hacia una cresta convexa estrecha, terminando en filos rectos escalonados a 90° (talones). Corte: Perfilado de terminación arquitectónica. Firma visual del corte: Deja una cara decorativa ondulada continua (tipo pecho paloma alargado) y, si se usa la fresa B, un canal rectangular profundo en la parte posterior (alivio).
+
+[Molduras] - Rinconera Simple HM:
+Cuerpo cilíndrico rojo macizo. 4 a 6 insertos de HM. Su geometría clave es un abultamiento central masivo y convexo (forma de media esfera proyectada hacia afuera) flanqueado EXACTAMENTE por dos cortes rectos horizontales (talones) en los bordes inferior y superior. Corte: Vaciado interior de esquina (Cove). Firma visual del corte: Elimina la arista de 90° y excava un canal interior perfectamente cóncavo y ancho, dejando escalones rectos a cada lado.
+
+[Molduras] - Rinconera Doble HM:
+Herramienta "sándwich". Dos cuerpos rojos con filos curvos salientes que intercalan una fina y plana hoja de sierra circular en el medio. Firma visual del corte: Talla DOS huecos cóncavos (canales) paralelos, estrictamente divididos en el centro por una hendidura o tajo recto (marca de la hoja de sierra central).
+
+[Molduras] - Frente Inglés HM:
+Juego de fresas regulables rojas (tipos A y B). El filo desciende en una línea diagonal recta a 45° (bisel) que empalma limpiamente con una curva cóncava suave en la base, contando además con dientes rectos horizontales laterales. Firma visual del corte: La cara vista de la madera tiene caída diagonal y terminación curva, mientras que en el canto oculto genera una ranura (modelo B) o una espiga machimbrada (modelo A).
+
+[Ensambles] - Machimbre Simple HM:
+Juego apilable rojo. Filos exteriores rectos con un ligero escalón en su diseño, combinados con un disco de sierra delgado de 16 dientes para el centro. Firma visual del corte: Crea lengüeta recta o canal hembra recto. Al unir dos tablas, la cara vista presenta la clásica junta hundida rectangular o un bisel simple en V.
+
+[Ensambles] - Machimbre Doble HM:
+Juego apilable rojo de alta densidad. Se diferencia visualmente del simple por utilizar DOS discos finos de sierra centrales paralelos para la pieza hembra, o un perfil central esculpido en doble espiga para el macho. Firma visual del corte: Talla estrictamente dos lengüetas (machos) o dos ranuras (hembras) gemelas y paralelas en el canto de la madera.
+
+[Ensambles] - Machimbre Piso Standard:
+Juego de 4 fresas apilables rojas. La zona de encastre interno presenta cortantes marcadamente redondeados y curvos en lugar de esquinas afiladas a 90°. Firma visual del corte: Macho de lengüeta redondeada y hembra cóncava tipo U. Al encastrar, la cara superficial deja un canal recto y estrecho de separación denominado "junta abierta".
+
+[Ensambles] - Machimbre Piso para Grampa HM:
+Juego de 4 fresas apilables rojas. Mantiene el encastre curvo del standard, pero incorpora un pequeño cortante saliente rectangular adicional. Firma visual del corte: Mismo perfil de junta abierta y macho redondeado, pero se observa claramente una pequeña ranura rectangular o muesca tallada en el labio inferior del canto (para alojamiento de grampa metálica oculta).
+
+[Ensambles] - Machimbre Piso para Grampa y Microbisel HM:
+Mega-juego de 8 fresas apilables. Mantiene encastre curvo y muesca inferior de grampa, pero suma finísimos cortantes a 45° en la zona superior. Firma visual del corte: Perfil 3-en-1: Lengüeta interna redondeada + Muesca inferior oculta para grampa + Pequeños biseles/chanfles suavizados (microbisel) en las aristas superiores de la junta abierta superficial.
+
+[Perfilado] - Deck Standard HM:
+Juego de 2 fresas rojas. Las aristas de corte presentan curvas profundas en forma de "C" envolvente diseñadas puramente para matar bordes. Firma visual del corte: Redondea las aristas superior e inferior de una tabla creando el clásico listón liso de deck superior y lateral, sin tallar ranuras internas.
+
+[Perfilado] - Deck para Grampa HM:
+Juego compuesto de 4 fresas rojas y 2 delgadas sierras metálicas centrales. Firma visual del corte: Igual que el deck standard (aristas redondeadas simultáneamente), pero incluye de forma notoria un corte o ranura profunda, delgada y recta tallada justo a lo largo de todo el espesor central de la tabla (alojamiento de grampas plásticas).
+
+[Paneles y Puertas] - Replán de Tablero HM:
+Fresa maciza roja de inmenso diámetro (ej. 200mm). Insertos de HM visualmente desproporcionados hacia lo ancho, mostrando un largo plano horizontal suave o curvo que termina en un salto. Firma visual del corte: No opera en el canto, sino rebajando enormemente el contorno de la cara de una placa, dejando una falda plana o suave declive extensa conectada a una fina lengüeta exterior de encastre.
+
+[Aberturas] - Moldura de Puertas y Ventanas HM:
+Juego compuesto por 2 masivas fresas rojas enfrentadas con una hoja de sierra intercalada en el centro geométrico. Muestran simetría de espejo perfecta. Firma visual del corte: Perfilado interno simétrico. Talla un borde decorativo (curvas u ondulaciones) en el frente y al dorso de la tabla simultáneamente, dejando una hendidura o canal recto en el centro mismo del espesor del marco (para alojar vidrio o panel).
+
+[Aberturas] - Contramolduras de Puertas y Ventanas HM:
+Cuerpo masivo rojo. Perfil de corte inverso. El rasgo visual es un sobresaliente bloque plano y rectangular en el medio, rodeado lateralmente por excavaciones o perfiles caídos. Firma visual del corte: Espiga central recta e imponente tallada en el canto de la madera, pero los apoyos laterales (hombros de la espiga) no son planos, sino que tienen caídas curvas contrapuestas para asentar con exactitud en la moldura descrita anteriormente.
+
+[Aberturas] - Moldura de Puertas y Ventanas Simple HM:
+¡ATENCIÓN IA! HERRAMIENTA MODULAR (Sistema 3 en 1). Juego rojo compuesto por 1 fresa gruesa decorativa curva y 2 fresas ranuradoras finas apilables. Firma visual del corte: Dependiendo del ensamble de las partes (Operación 1, 2 o 3) en la espigadora, una misma pieza de madera puede mostrar: A) Moldura curva con ranura central profunda. B) Contramoldura con tenón/espiga (Macho sobresaliente). C) Replán de declive ancho en la cara vista.
+
+[Paneles y Puertas] - Puerta de Muebles HM:
+¡ATENCIÓN IA! HERRAMIENTA MODULAR (Sistema 3 en 1). Juego rojo compuesto por 1 fresa gruesa cóncava/escalonada y 1 fresa plana apilable. Firma visual del corte: Exactamente igual que el modelo Simple de aberturas, la disposición de los filos permite 3 operaciones separadas de carpintería: Genera un perfil decorativo con ranura (Moldura), o la espiga correspondiente (Contramoldura) o el afinamiento perimetral para el tablero interior (Replán).
+
+[Ensambles] - Fresa para Finger HM:
+Cuerpo cilíndrico rojo macizo. Su perfil de filo es inconfundible y agresivo: múltiples dientes puntiagudos, asimétricos y afilados dispuestos en "V" estricta (patrón zig-zag afilado, peine punzante). Firma visual del corte: Ensamble finger-joint. Deja en las testas de la madera una serie estriada de picos y valles filosos y profundos que se entrelazan como nudillos.
+
+[Ensambles] - Fresa para Finger HM (hasta 45mm):
+Cuerpo rojo denso, alto y notorio (configuración 2+2). Mismo diseño dentado que el Finger base (puntas afiladas en "V"), pero su cara de corte es mucho más larga verticalmente, albergando una mayor cantidad de picos agudos continuos. Firma visual del corte: Patrón zig-zag entrelazado y profundo, pero que abarca tableros y maderas muy gruesas (travesaños de hasta 4,5 cm).
+
+[Ensambles] - Fresa para Ensamble Cónico HM:
+Juego de fresas apilables metálicas o rojas. Rasgo clave que no debe confundirse con Finger: Sus dientes extendidos terminan en puntas marcadamente PLANAS O CHATAS, conformando trapecios, nunca filos puntiagudos. Firma visual del corte: Ensamble trapezoidal en peine. Deja una sucesión gruesa de picos y canales en la madera, pero los topes siempre presentan base plana formando rectángulos (alineados, escalonados o en declive).
+
+[Ensambles] - Fresa para Encastre HM:
+Cuerpo rojo muy distintivo. El cortante cruza la geometría en un agresivo bisel recto a 45 grados, pero en medio de esta diagonal perfecta, sobresale un canal u obstáculo rectangular ortogonal. Firma visual del corte: Ensamble en inglete con traba a 45°. Deja un clásico corte oblicuo para armar marcos a escuadra (corte a 45°), pero la diagonal no es plana: esconde una espiga sólida o surco interno (diente) para impedir que la junta se deslice al pegar.
+
+[Curvas] - Fresa para Radios Múltiples HM:
+Cuerpo rojo. Perfil escalonado y continuo de aspecto ondulante, conformado por la sucesión matemática de múltiples curvas cóncavas consecutivas crecientes (R4, R6, R8, R10). Firma visual del corte: Aunque la herramienta es ondulada entera, en la tabla de madera realiza exclusivamente el redondeo simple y liso (un solo arco, cuarto de círculo) de una única arista o canto en uso, según qué fracción del filo se empleó.
+
+[Molduras] - Fresa Multimoldura:
+Cuerpo cilíndrico masivo rojo, llamativamente provisto de unicamente dos insertos (Z=2). Su filo HM dibuja una curva extremadamente extendida, un mapa topográfico continuo compuesto de picos, valles suaves, saltos planos y lomas. Firma visual del corte: Fresa arquitectónica matriz. Jamás marca su perfil íntegro en la madera; el operario ajusta la altura del tupí para que la madera (la parte dorada) sea atacada solo por un segmento del filo (ignorando el resto de la placa plateada). Según el ajuste de altura, genera múltiples tipos de corte: 1) Boleados convexos simples o redondeo en la arista. 2) Vaciados cóncavos profundos con escalones. 3) Perfiles clásicos tipo "pecho paloma" (curva en S). 4) Escalones rectos que bajan hacia pequeñas canaletas cóncavas. 5) Rebajes extremos que dejan una fina lengüeta recta sobresaliendo. 6) Molduras arquitectónicas compuestas que combinan curvas convexas, picos filosos y lomas suaves en una misma pasada.
+
+[Mechas] - Mecha Ciega Italiana (MCD / MCI):
+También conocida como Mecha de Barreno. Cuerpo compuesto por un cabo metálico cilíndrico plateado y una parte superior helicoidal (espiral) coloreada. Punta inconfundible y característica: cuenta con un pico de guía central (Brad Point), filos principales de corte y, fundamentalmente, **dos incisores periféricos (scorers/ruteadores) elevados y afilados** en los extremos del diámetro. REGLA DE COLOR Y GIRO: Si la espiral es NEGRA, gira a la Derecha (MCD). Si la espiral es de otro color (NARANJA o ROJO), gira a la Izquierda (MCI). Firma visual del corte: Perforación ciega perfecta. Hace un agujero cilíndrico que no atraviesa la tabla, dejando un fondo plano con un puntito en el medio y bordes superiores totalmente limpios y sin astillar, ideales para encastres con tarugos.
+
+[Mechas] - Mecha Pasante Italiana (MPD / MPI):
+Cuerpo compuesto por un cabo metálico cilíndrico plateado y una parte superior helicoidal (espiral) coloreada. Punta inconfundible y característica: tiene una geometría helicoidal muy pronunciada que termina en una punta central muy afilada. A diferencia de la mecha ciega, esta no tiene incisores laterales planos, sino que los mismos filos helicoidales continúan hasta la punta. REGLA DE COLOR Y GIRO: Si la espiral es NEGRA, gira a la Derecha (MPD). Si la espiral es de otro color (NARANJA o ROJO), gira a la Izquierda (MPI). Firma visual del corte: Perforación pasante. Hace un agujero cilíndrico perfecto que atraviesa completamente la tabla de lado a lado. Diseñada para una evacuación rápida de viruta y una salida limpia sin astillar la cara posterior de la madera.
+
+[Mechas] - Fresa Bisagra Italiana (MBD / MBI):
+Cuerpo compuesto por un vástago metálico cilíndrico plateado y una cabeza cortante ensanchada y robusta (forma de disco o cilindro ancho). Punta inconfundible: posee una punta guía de centrado, filos rectos para vaciar el fondo, y dos pronunciadas "alas" o incisores curvos en el perímetro exterior que cortan los bordes. REGLA DE COLOR Y GIRO: Si la cabeza es NEGRA, gira a la Derecha (MBD). Si es de otro color (NARANJA o ROJO), gira a la Izquierda (MBI). Firma visual del corte: Perforación cilíndrica ancha, ciega (no pasante) y de fondo plano perfecto, típicamente usada para alojar la "cazoleta" de las bisagras en puertas de muebles (agujeros de 35mm o similar).
+
+[Mechas] - Mecha Integral de Widia (Caja de Cerradura / CNC):
+Cuerpo macizo monobloque compuesto por una sola pieza de carburo de tungsteno sólido (color metálico plateado oscuro o grisáceo uniforme en toda la herramienta). NO tiene espiral coloreada ni pintada. Visualmente se destaca por una hélice de corte muy agresiva y larga, usualmente con 3 filos (Z=3) que pueden tener un patrón dentado (rompevirutas) en el borde para desbaste rápido, o ser lisos. Posee punta guía central fuerte y filos perimetrales elevados. Suele tener medidas grabadas en láser en el cabo (ej: VHM d16x25x155 RH). Firma visual del corte: Perforación y fresado lateral profundo extremadamente limpio y rápido. Ideal para el fresado profundo como hacer la caja de cerradura en puertas usando pantógrafos o routers CNC.
+
+[CNC / Pantógrafo] - Fresa / Mecha de Compresión (Nesting):
+Cuerpo macizo monobloque. Su rasgo visual más inconfundible es su revestimiento "ta-c lafer", que a menudo le da un brillo iridiscente, tornasolado (arcoíris) o negro muy pulido. Sus canales en espiral son bidireccionales: una parte de la hélice sube y la otra baja, encontrándose en el medio (geometría de compresión). Firma visual del corte: Fresado lateral y perforación en placas bilaminadas (melamina/MDF) con un acabado perfecto en ambas caras (arriba y abajo) sin el más mínimo astillado, gracias a que comprime la viruta hacia el centro. Típica de mesas Nesting y Routers CNC.
+
+[CNC / Pantógrafo] - Fresa para Plegado de Melamina: 
+Cuerpo con vástago de 12mm. Cabeza de corte muy ancha (aprox 45mm) con un perfil inconfundible en forma de "reloj de arena", "mariposa" o "V" curva invertida. Tiene 2 filos macizos de metal duro. A veces viene en una cajita de protección roja. Firma visual del corte: Talla un canal ancho y profundo con curvas específicas en placas de melamina de 18mm, vaciando el material hasta dejar solo la lámina exterior intacta. Esto permite luego "doblar" o "plegar" la placa a 90 grados (ayudado con pistola de calor) sin que se note la unión.
+"""
+
+BASE_CONOCIMIENTO = """
+Eres un asesor profesional sobre la carpintería, te destacas por dar consejos para que las personas compren las herramientas de mejor calidad ofreciendo opciones tanto de gran calidad pero alto precio pero también un precio más económico pero menor calidad (obviamente aclarando siempre que es calidad profesional las herramientas).
+Utilizar un tono amigable, pero sin irte por otros lados y siempre mantenerse en la fila de información.
+Para brindar información no utilizar información de otras marcas que no sean WoodTools, Freud o Franzoi.
+Tu labor además de informar es indagar por lo que tenes que ir preguntando de manera sutil: Qué herramienta necesita, qué materiales quiere cortar, en qué medida y cuál es la máquina que utiliza.
+
+⚠️ REGLA DE DESPEDIDAS Y RECHAZOS (CIERRE DEFINITIVO): Si el cliente indica que no va a comprar, que cambió de rubro, que no tiene trabajo, o dice un "gracias" final para cortar la charla:
+1. Despídete de forma EXTREMADAMENTE BREVE y empática (ej: "Entiendo, ¡te deseo mucho éxito!").
+2. TIENES ESTRICTAMENTE PROHIBIDO volver a ofrecer ayuda, pedir que te contacten en el futuro o hacer preguntas. Corta la charla ahí.
+3. Si el cliente dice palabras como "bloqueado", "basta" o se queja por la insistencia, responde ÚNICAMENTE con "Mil disculpas. ¡Hasta luego!" y NADA MÁS.
+
+⚠️ REGLA DE CLIENTE OCUPADO O MANEJANDO: Si el cliente indica que está ocupado, trabajando, manejando, "en la ruta" o que no puede hablar en este momento:
+1. Dile amablemente que no hay problema y que su seguridad/tiempo es lo principal.
+2. Pregúntale exactamente qué día y a qué hora prefiere que nos comuniquemos con él.
+3. ⚠️ REGLA ESTRICTA DE HORARIO COMERCIAL: Nuestro horario de atención es ÚNICAMENTE de Lunes a Viernes de 8:00 a 17:00 hs. Si el cliente propone un horario fuera de este rango (ej. 18:00 hs) o un fin de semana (sábado/domingo), TIENES ESTRICTAMENTE PROHIBIDO aceptarlo. Pide disculpas, recuérdale nuestro horario (Lun-Vie 8 a 17hs) y ofrécele coordinar para un día y horario válido.
+4. Una vez que el cliente confirme un día y horario VÁLIDO, despídete amablemente y GENERA EL ENLACE DE DERIVACIÓN INMEDIATAMENTE.
+5. OBLIGATORIO: En tu último mensaje, además del enlace, DEBES incluir exactamente esta etiqueta oculta con los datos acordados (reemplazando los corchetes por los datos reales):
+[AGENDADO: Contactar el dia {Día acordado} a las {Hora acordada} al numero {NÚMERO DEL CLIENTE ACTUAL}]
+Ejemplo: [AGENDADO: Contactar el dia Lunes a las 14:30 al numero 5491140916686]
+
+⚠️ REGLA DE QUEJAS Y MALAS EXPERIENCIAS: Si el cliente manifiesta una mala experiencia pasada (ej. mal afilado, mala atención, herramientas dañadas, frustración, enojo), TIENES ESTRICTAMENTE PROHIBIDO intentar venderle algo o preguntarle qué herramienta busca. 
+Tu único deber en ese momento es:
+1. Pedir disculpas sinceras y empáticas en nombre de WoodTools.
+2. Validar su frustración para que pueda desahogarse.
+3. Ofrecerle inmediatamente derivarlo con un "asesor" humano (NUNCA utilices la palabra "vendedor") para que pueda atender su reclamo de forma personal y darle una solución. 
+4. Si acepta la derivación o notas que el nivel de fricción aumenta, genera el enlace de derivación INMEDIATAMENTE.
+
+⚠️ REGLA SOBRE PRECIOS Y STOCK: No tienes acceso a listas de precios ni stock. Si el cliente pide un precio, responde su consulta o indaga qué herramienta necesita, y aclara UNA SOLA VEZ con naturalidad que los precios se los pasará el asesor al finalizar. NO repitas esta aclaración en cada mensaje.
+
+⚠️ PRODUCTOS NO TRABAJADOS (SIERRAS DE CINTA): Si el cliente menciona medidas en metros (ej. "4.20 m", "4 metros"), habla de "desarrollo", "volante", "sierra de cinta" o "sin fin", indícale amablemente y a la primera que NO comercializamos ese tipo de hojas, solo trabajamos con sierras circulares.
+
+⚠️ REGLA DE ORO DE CONFIDENCIALIDAD (CÓDIGOS INTERNOS) ⚠️
+Los códigos alfanuméricos de las herramientas (ej: LU3F-0200, LU5B 0300, LG3D 0600, FRS0054, CHC050420HSS, etc.) que verás a continuación son ESTRICTAMENTE DE USO INTERNO. 
+TIENES PROHIBIDO ABSOLUTAMENTE escribirlos en el chat conversacional con el cliente. Tampoco debes inyectarlos en el enlace de derivación.
+Para referirte a una herramienta en el chat o en el enlace, usa SOLO su nombre genérico, marca, diámetro exterior y cantidad de dientes. 
+
+⚠️ REGLA CRÍTICA DE MARCAS (¡NUEVA Y ESTRICTA!) ⚠️
+- Las SIERRAS CIRCULARES son marca Freud o Franzoi.
+- Las FRESAS, MECHAS y CUCHILLAS son de la línea WoodTools, marca Italiana o Franzoi.
+- ¡TIENES ESTRICTAMENTE PROHIBIDO decir que una Fresa es de marca Freud! NUNCA asocies la palabra "Freud" a una fresa, ni siquiera si el cliente lo dice. Si ofreces una Fresa, di "Fresa [Nombre] de WoodTools".
+
+SIERRAS CIRCULARES
+A la hora de ofrecer las sierras circulares preguntar qué material cortan EXCEPTO si ya te piden "sierra con incisor".
+¡NUEVA REGLA PARA INCISOR!: Si el cliente te pide "sierra con incisor" o "disco más incisor", ASUME AUTOMÁTICAMENTE que el material es MELAMINA. NO LE PREGUNTES QUÉ MATERIAL VA A CORTAR. Además, asume o pregúntale directamente si lo usa en una "máquina industrial" o "escuadradora" (ya que son las únicas que llevan incisor).
+Si dice melamina (y no mencionó incisor), preguntar si la utiliza CON o SIN incisor.
+- Si te dice CON incisor (o ya lo pidió): Utilizar la información de sierras de ángulo positivo. Indicar que son la mejor opción para maquinas industriales que llevan incisor, y bríndale la información de la sierra principal Y DEL INCISOR JUNTOS. Mencionar internamente que los codigos son LG3D 0400, LG3D 0600 y SSK12 001. El incisor para melamina es LI25M31FA3.
+- Si te dice SIN incisor: Utilizar la información de sierras de ángulo negativo. Aclarar que son para usar sin incisor en maquinas de banco y mencionar internamente que los códigos son LU3F 0200, LU3F 0300, FR12L001H, LU3E 0200 y SSK3F 0300.
+⚠️ REGLA PARA MÁQUINAS DE BANCO O DE MANO: Si el cliente menciona que usará una "máquina de banco" o "máquina de mano", debes ofrecer sierras de ÁNGULO NEGATIVO por defecto. Ofrece el incisor SOLO si el cliente te lo menciona o pide explícitamente.
+⚠️ REGLA DE MEDIDAS PARA MÁQUINAS DE MANO: En las máquinas de mano ÚNICAMENTE se utilizan medidas de 230mm, 220mm, 185mm y 180mm. No ofrezcas ni menciones otras medidas para estas máquinas.
+
+⚠️ NUEVA REGLA PARA ESCUADRADORAS Y MATERIALES: Si el cliente menciona una "escuadradora", NO asumas que va a cortar melamina. Pregunta SIEMPRE qué material corta (madera, MDF, melamina, etc.), a menos que te pida explícitamente una sierra "con incisor" (ahí sí asumes melamina).
+
+⚠️ REGLA ESTRICTA MARCA FRANZOI: Ofrecer sierras marca FRANZOI ÚNICAMENTE si el cliente menciona explícitamente que va a "abrir madera", cortar "tirantes", "tirantería", o si usa "máquinas múltiples". Las sierras Franzoi NO son aptas para máquinas de mano ni escuadradoras. NUNCA ofrecer Franzoi para cortes generales, escuadradoras o cortes de cabeza.
+
+⚠️ REGLA DE VETA PARA MADERA:
+- Para cortes transversales (de cabeza / en contra de la veta): Ofrecer línea LU2C o LU2B.
+- Para cortes longitudinales y transversales (a favor y en contra de la veta / cortes universales): Ofrecer línea LU2A o LG2A.
+
+⚠️ NUEVO: ALUMINIO, NO FERROSOS Y PLÁSTICOS ⚠️
+Si el cliente busca sierras para cortar Aluminio, No Ferrosos, Plásticos o Plexiglass, SÍ VENDEMOS. Ofrece las sierras circulares marca Freud diseñadas específicamente para esto. 
+Usa INTERNAMENTE estos códigos: LU4A 0100 (250mm, 80d), LU4A 0200 (300mm, 96d), LU5B 0300 (250mm, 80d), LU5B 2200 (400mm, 120d), LU5B 2800 (450mm, 128d), LU5B 3200 (500mm, 140d), LU5B 3800 (550mm, 148d), LU5D 0900 (250mm, 80d), LU5D 1800 (350mm, 108d), LU5E 0600 (300mm, 120d).
+
+Actúa como un asistente técnico especializado al brindar información sobre este ítem, básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LG3D 0600, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico al brindar información sobre este ítem, básate estrictamente en los siguientes datos técnicos extraídos de su ficha: es un producto de marca Freud, modelo LU3f-0200 250 Z80, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud (Italia), modelo LG3D 0400, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina (con incisor).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud (origen Italia), modelo LU3F 0300, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Aglomerado, MDF, Madera y Melamina (modelo para Melamina sin incisor).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo F03FS09801, cuenta con un diámetro exterior de 185 mm, un ancho de corte (espesor) de 2,4 cm y un diámetro central de 20 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Aglomerado, MDF, Madera y Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud (origen Italia), modelo LU3F 0300, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto specifically para superficies de Aglomerado, MDF y Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LG3D 0400/LI25M31FA3, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud (origen Italia), modelo FR12L001H, cuenta con un diámetro exterior de 185 mm, un ancho de corte (espesor) de 2,4 cm y un diámetro central de 20 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Aglomerado, MDF, Madera y Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU3D 0600/ LI25M 31FA3, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 cm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU3E 0200, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' (específicamente un incisor) y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud (Italia), modelo LI25M31FA3, cuenta con un diámetro exterior de 125 mm, un ancho de corte (espesor) de 3,1 mm y un diámetro central de 20 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Aglomerado, MDF y Melamina (modelo detallado como incisor para melamina).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU3F 0400, cuenta con un diámetro exterior de 350 mm, un ancho de corte (espesor) de 3,5 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU3F-0200 250 Z80, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU3D0600, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo FREUD (Línea Wood Tools), cuenta con un diámetro exterior de 220 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su use is apt specifically for Melamine surfaces.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU3D 0200, cuenta con un diámetro exterior de 220 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Melamina.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LG2A 2100, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; su modelo detallado corresponde a tipo de diente alterno, está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (Ideal para cortes universales: a favor y en contra de la veta / horizontales y de cabeza).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LG2B 1100, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LG2A 1700, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (modelo para madera en general).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Franzoi, modelo SC4505204F, cuenta con un diámetro exterior de 450 mm, un ancho de corte (espesor) de 5,1 mm y un diámetro central de 30 mm; está fabricado en Metal duro y su uso es apto específicamente para superficies de Madera (modelo para tirantería).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Franzoi, modelo SC3004164F, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 4 mm y un diámetro central de 30 mm; está fabricado en Metal duro y su uso es apto específicamente para superficies de Madera (modelo para tirantería).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LG2A 2800, cuenta con un diámetro exterior de 350 mm, un ancho de corte (espesor) de 3,5 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Maciza, Madera, Madera contrachapada, aglomerado sin procesar, blanda y dura.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2A 1600, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera, blanda y dura en general, a favor de la veta.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2A 2500, cuenta con un diámetro exterior de 350 mm, un ancho de corte (espesor) de 3,5 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera, blanda y dura (a favor y en contra de la veta).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo always como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2B 0700, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (modelo para madera blanda y dura en general).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Franzoi, modelo SC4504248F, cuenta con un diámetro exterior de 450 mm, un ancho de corte (espesor) de 4,2 mm y un diámetro central de 30 mm; está fabricado en Metal duro y su uso es apto específicamente para superficies de Madera.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2C 2000, cuenta con un diámetro exterior de 350 mm, un ancho de corte (espesor) de 3,5 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (EXCLUSIVO para cortes transversales / de cabeza / en contra de la veta. NO usar a favor de la veta).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Franzoi, modelo SC60055244F, cuenta con un diámetro exterior de 600 mm, un ancho de corte (espesor) de 5,5 mm y un diámetro central de 30 mm; está fabricado en Metal duro y su uso es apto specifically para superficies de Madera (modelo para máquinas múltiples).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2B 1900, cuenta con un diámetro exterior de 400 mm, un ancho de corte (espesor) de 4 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2C 1200, cuenta con un diámetro exterior de 250 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (EXCLUSIVO para cortes transversales / de cabeza / en contra de la veta. NO usar a favor de la veta).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2B 0200, cuenta con un diámetro exterior de 180 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 40 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (modelo detallado para madera).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2C 1500, cuenta con un diámetro exterior de 300 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (EXCLUSIVO para cortes transversales / de cabeza / en contra de la veta. NO usar a favor de la veta).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2A 3100, cuenta con un diámetro exterior de 400 mm, un ancho de corte (espesor) de 4 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera (modelo para madera blanda y dura).
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2A 0800, cuenta con un diámetro exterior de 200 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' and básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2A 3300, cuenta con un diámetro exterior de 400 mm, un ancho de corte (espesor) de 4 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo FI14M AA3, cuenta con un diámetro exterior de 150 mm, un ancho de corte (espesor) de 1,5 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2B 2100, cuenta con un diámetro exterior de 500 mm, un ancho de corte (espesor) de 4,4 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto specifically para superficies de Madera, blanda y dura.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'sierra circular' y básate estrictamente en los siguientes datos técnicos: es un producto de marca Freud, modelo LU2A 0500, cuenta con un diámetro exterior de 180 mm, un ancho de corte (espesor) de 3,2 mm y un diámetro central de 30 mm; está fabricado en Carburo de tungsteno (HM) Widia y su uso es apto específicamente para superficies de Madera.
+
+FRESAS Y MECHAS
+⚠️ REGLA DE MATERIAL: Ten en cuenta que la mayoría de fresas son ÚNICAMENTE PARA MADERA. Sin embargo, para MÁQUINAS CNC/ROUTERS, se ofrecen herramientas especializadas como la Fresa de Compresión (para Melamina) y Mecha Integral (para MDF/Melamina).
+1. Si piden FRESAS RECTAS: Pregúntale la cantidad de dientes. Si piden "6 dientes", pregunta material (sirve para madera y melamina). Si no, ASUME madera y NO preguntes material.
+2. Si piden MECHAS (Pasantes, Ciegas, Bisagra): Vienen con vástagos de 8, 10 o 12mm. Las integrales vienen con vástago nominal.
+
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresas Rectas HM" y manteniendo el código "FRS0054/1006" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) variable de 5 a 100 mm, un Diámetro interior (d) de 40 mm y está disponible con un número de dientes (Z) de 4 o 6, sin dientes incisores (R); se trata de una fresa con cortantes rectos en HM diseñada específicamente para ranurar, cepillar o realizar rebajes, contando con ángulo axial a partir de los 20 mm de ancho de corte.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresas Rectas con Incisores HM" y manteniendo el código "FRSI01542/10066" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) variable de 15 a 100 mm, un Diámetro interior (d) de 40 mm, está disponible con un número de dientes (Z) de 4 o 6 y cuenta con dientes incisores (R) que varían de 2 a 6; se destaca por tener cortantes rectos con ángulo axial e incisores en HM, diseñada específicamente para ranurar sin astillar.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresas para Ranurar Regulables HM" y manteniendo los códigos "FRG0510" y "FRG1039" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 160 mm y un Diámetro interior (d) de 40 mm, y cuentan con 4 dientes incisores (R); están disponibles en dos variantes principales según su capacidad de regulación: una para un Ancho de corte (B) de 5 a 10 mm (con disposición de dientes Z de 2x4 y un ancho de corte del diente (b) de 5 mm) y otra para un Ancho de corte (B) de 10 a 39 mm (con disposición de dientes Z de 3x4 y un ancho de corte del diente (b) de 10 mm); se describe como un juego de fresas regulables con cortantes en HM diseñadas específicamente para realizar ranuras, rebajes y espigas.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Cabezales Cepilladores HM" y manteniendo los códigos "CB0500640", "CB0750660", "CB1000690", "CB13006100", "CB1601272", "CB1801280" y "CB22012100" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 125 mm y un Diámetro interior (d) de 40 mm en todas sus versiones; varían significativamente en su Ancho de corte (B) que va desde 55 mm hasta 220 mm, su número de dientes (Z) que oscila entre 40 y 100, y el ancho de corte del diente (b) que es de 6 mm para los modelos más angostos (hasta 130 mm de ancho) y de 12 mm para los modelos más anchos (desde 160 mm); se describen como cabezales cepilladores con cortantes en HM diseñados para cepillar o espigar, destacándose por su bajo nivel de ruido y menor consumo de energía.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresas en ángulo HM" y manteniendo el código "FA104/506" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) variable de 10 a 50 mm, un Diámetro interior (d) de 40 mm y está disponible con un número de dientes (Z) de 4 o 6; se describe como una fresa con cortantes en HM diseñada específicamente para efectuar ángulos.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresas 1/4 círculo cóncavo y convexo HM" y manteniendo los códigos "F04C014", "F04C016", "F04C054" y "F04C056" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 150 mm y un Diámetro interior (d) de 40 mm; están disponibles con un número de dientes (Z) de 4 o 6 y varían en su Ancho de corte (B) offering options from 1/2" to 3/4" and from 3/4" to 1 1/4"; they are described as mills with cutting edges in HM and axial angle designed to perform works of 1/4 of concave or convex circle in forms A, B, C or D.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresas 1/2 círculo cóncavo y convexo HM" y manteniendo los códigos "F2C014", "F2C054", "F2C104", "F2C154", "F2C204", "F2C254" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 150 mm y un Diámetro interior (d) de 40 mm, están disponibles con un número de dientes (Z) de 4 o 6 y ofrecen diversas opciones de Ancho de corte (B) que incluyen 1/2", 5/8", 3/4", 1", 1 1/2" y 2"; se describen como fresas con cortantes en HM diseñadas específicamente para efectuar figuras de medio círculo cóncavo o convexo.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Zócalo Simple y Contramarco HM" y manteniendo los códigos "FZS128" y "FZS129" solo para identificación interna a menos que el cliente lo pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) de 1/2" a 3/4" y un Diámetro interior (d) de 40 mm, contando con un número de dientes (Z) de 4; el producto ofrece dos variantes funcionales: una configuración para efectuar zócalos que combina una fresa A y una fresa B (código FZS128), y una configuración para efectuar contramarcos que utiliza dos fresas A (código FZS129); se describen como herramientas con cortantes en HM diseñadas específicamente para la fabricación de estas molduras.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Rinconera Simple HM" y manteniendo el código "FR104/156" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) variable de 3/4" a 1 1/2", un Diámetro interior (d) de 40 mm y está disponible con un número de dientes (Z) de 4 o 6; se describe como una fresa con cortantes en HM diseñada específicamente para efectuar rinconera según los modelos 1 o 2.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Rinconera Doble HM" y manteniendo el código "JFRD" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 160 mm, un Ancho de corte (B) de 1" y un Diámetro interior (d) de 40 mm; cuenta con una configuración de dientes (Z) de 2x4 y 1x10, compuesta por fresas con 4 cortantes cada una y una sierra circular con 10 cortantes, todos en HM; está diseñada específicamente para efectuar rinconera doble según los modelos 1 o 2.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Frente Inglés HM" y manteniendo los códigos "JFFI01" y "JFFI05" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 175 mm, un Ancho de corte (B) variable de 1/2" a 1" y un Diámetro interior (d) de 40 mm; cuentan con una configuración de dientes (Z) de 4 x 4 y están disponibles en las variantes A y B; se describen como fresas regulables con 4 cortantes en HM diseñadas específicamente para realizar frente inglés simple y machimbrado.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Machimbre Simple HM" y manteniendo los códigos "JFMS1234" and "JFMS34114" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 155 mm y un Diámetro interior (d) de 40 mm; están disponibles en dos variantes principales según el espesor de trabajo: una para un Ancho de corte (B) de 1/2" a 3/4" con una configuración de dientes (Z) compleja de 5x4 y 1x16, y otra para un Ancho de corte (B) de 3/4" a 1 1/4" con una configuración de dientes (Z) de 6x4; se describen como fresas con cortantes en HM diseñadas específicamente para efectuar machimbre simple biselado o bajo fondo.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Machimbre Doble HM" y manteniendo el código "JFMD1234" solo para identificación interna a menos que el cliente lo pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 155 mm, un Ancho de corte (B) de 1/2" a 3/4" y un Diámetro interior (d) de 40 mm; cuentan con una configuración de dientes (Z) compleja de 10x4 y 2x16; se describen como fresas con cortantes en HM diseñadas específicamente para realizar machimbre doble con chanfle o bajo fondo.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Machimbre Piso Standard" y manteniendo los códigos "JFMP3411" y "JFMP3416" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro interior (d) de 40 mm y se presentan en dos variantes principales; la primera tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) de 3/4" a 1 1/4" y una configuración de dientes (Z) de 4 x 4, mientras que la segunda tiene un Diámetro exterior (D) de 160 mm, un Ancho de corte (B) de 5/8" a 1" y una configuración de dientes (Z) de 4 x 6; se describen como un juego de 4 fresas con cortantes diseñadas para realizar machimbre de piso con junta abierta, destacándose por tener macho y hembra redondeados.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Machimbre Piso para Grampa" y manteniendo el código "JFMP3416G" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 180 mm, un Ancho de corte (B) variable de 5/8" a 1" y un Diámetro interior (d) de 40 mm; cuenta con una configuración de dientes (Z) de 4x6+6; se describe como un juego de 4 fresas con 6 cortantes diseñadas específicamente para realizar machimbre de piso con junta abierta, destacándose por incluir la incisión necesaria para colocar grampa de sujeción.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Machimbre Piso para Grampa y Microbisel" y manteniendo el código "JFMP34166M" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 180 mm, un Ancho de corte (B) variable de 5/8" a 1" y un Diámetro interior (d) de 40 mm; cuenta con una configuración de dientes (Z) compleja de 8x6+6; se describe como un juego de 8 fresas con 6 cortantes diseñadas para realizar machimbre de piso con junta abierta, destacándose por incluir microbisel, aristas redondeadas e incisión para colocar grampa de sujeción.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Deck Standard HM" y manteniendo los códigos "JFDE4" y "JFDE6" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro interior (d) de 40 mm y un Ancho de corte (B) variable de 3/4" a 1"; se presentan en dos variantes principales: una con Diámetro exterior (D) de 150 mm y configuración de dientes (Z) de 2x4, y otra con Diámetro exterior (D) de 160 mm y configuración de dientes (Z) de 2x6; se describen como un juego de 2 fresas regulables para distintos espesores de madera, diseñadas para realizar deck tradicional y utilizadas principalmente en machimbradora.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Deck para Grampa HM" y manteniendo los códigos "JFDSG14" y "JFDSG16" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro exterior (D) de 160 mm, un Ancho de corte (B) de 1" y un Diámetro interior (d) de 40 mm; se describen como un juego compuesto por 4 fresas y 2 sierras diseñado específicamente para realizar deck para montaje con grampa plástica (usado normalmente en machimbradora) y están disponibles en dos configuraciones de dientes (Z) complejas: una de 4x4 y 2x8, y otra de 4x6 y 2x12.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Replán de Tablero HM" y manteniendo el código "FRP5533" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 200 mm, un Ancho de corte (B) de 55 mm y un Diámetro interior (d) de 40 mm, contando con una configuración de dientes (Z) de 3+3 y una medida b de 20 mm; se describe como una fresa con cortantes en HM diseñada para realizar replan de tablero y se fabrica en dos versiones operativas según la preferencia del usuario: fresa sobre madera o madera sobre fresa.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Moldura de Puertas y Ventanas HM" y manteniendo el código "JFMPV14" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) variable de 1 1/2" a 2" y un Diámetro interior (d) de 40 mm; cuenta con una configuración de dientes (Z) de 2x4 and 1x6; se describe como un juego compuesto de 2 fresas de moldura y una fresa ranuradora con cortantes en HM, diseñado específicamente para realizar molduras de puertas y ventanas que incluyan ranura para tableros o vidrios.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Contramolduras de Puertas y Ventanas HM" y manteniendo los códigos "FCPV41", "FCPV6" y "FCPV61" solo para identification interna a menos que el cliente los pida explícitamente: estas herramientas comparten un Ancho de corte (B) variable de 1 1/2" a 2" y un Diámetro interior (d) de 40 mm, pero se diferencian en sus dimensiones externas; el primer modelo ofrece un Diámetro exterior (D) de 150 mm con un número de dientes (Z) de 4, mientras que los modelos más grandes ofrecen un Diámetro exterior (D) de 250 mm o 320 mm, ambos con un número de dientes (Z) de 6; se describen como fresas con cortantes en HM diseñadas específicamente para realizar contramolduras utilizando espigadoras o tupíes.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Moldura de Puertas y Ventanas Simple HM" y manteniendo el código "JFMPVR" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 180 mm, un Ancho de corte (B) variable de 35 a 45 mm y un Diámetro interior (d) de 40 mm; cuenta con una configuración de dientes (Z) compleja de 1x2+2 y 2x4; se describe como un juego compuesto de 1 fresa tipo replán y 2 fresas rectas con cortantes en HM, diseñado específicamente para realizar molduras, contramolduras y replán.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Puerta de Muebles HM" y manteniendo el código "JFPMS10" solo para identification interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 160 mm, un Ancho de corte (B) de 1" y un Diámetro interior (d) de 40 mm, contando con una configuración de dientes (Z) de 1x4 y 1x6; se describe como un juego compuesto de una fresa de moldura y una ranuradora, diseñado específicamente para efectuar moldura, contramoldura y replan de puertas de muebles de cocina y vanitoris.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresa para Finger HM" y manteniendo el código "JFE254" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) de 22 mm y un Diámetro interior (d) de 40 mm, contando con un número de dientes (Z) de 4; se describe como una fresa con cortantes en HM diseñada para realizar uniones "finger" en maderas de hasta 22 mm, siendo especialmente usada en tupí o moldureras para unir madera a lo largo para tableros de puertas.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresa para Finger HM" y manteniendo el código "JFE5022" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) de 45 mm y un Diámetro interior (d) de 40 mm, contando con una configuración de dientes (Z) de 2 + 2; se describe como una fresa con cortantes en HM diseñada para realizar uniones "finger" en maderas de hasta 45 mm, siendo especialmente indicada para unir a lo largo maderas para tableros de puertas, largueros y travesaños utilizando tupí o moldureras.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresa para Ensamble Cónico HM" y manteniendo los códigos "JFE8122" and "JFE8121" solo para identificación interna a menos que el cliente los pida explícitamente: estas herramientas tienen un Diámetro interior (d) de 40 mm y se presentan en dos variantes; la primera tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) variable de 10 a 45 mm y una configuración de dientes (Z) de 4 x 4, mientras que la segunda tiene un Diámetro exterior (D) de 160 mm, un Ancho de corte (B) de 3,8 mm y una configuración de dientes (Z) de 1 x 4; se describen como un juego de fresas con 4 cortantes en HM diseñadas para unir madera, permitiendo profundidades de trabajo de 10-11 mm, 8-9 mm y 12 mm.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresa para Encastre HM" y manteniendo los códigos "JFE8Z122", "JFE8Z124" y "JFME68" solo para identificación interna a menos que el cliente lo pida explícitamente: estas herramientas tienen un Diámetro interior (d) de 40 mm y una configuración de dientes (Z) de 3+3; se presentan en variantes con Diámetro exterior (D) de 180 mm y Ancho de corte (B) de 19 a 40 mm (disponibles en tipo A y B), y una versión mayor con Diámetro exterior (D) de 245 mm y Ancho de corte (B) de 22 a 68 mm (tipo B); se describen como herramientas utilizadas para ensamble a 90º y 180º, cuya principal aplicación es la unión de marcos en puertas y ventanas garantizando perfecta escuadra y rápido ensamble.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresa para Radios Múltiples HM" y manteniendo el código "FMR04" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 140 mm, un Ancho de corte (B) de 35 mm y un Diámetro interior (d) de 40 mm, contando con un número de dientes (Z) de 4; se describe como una fresa con 4 cortantes en HM diseñada específicamente para realizar multi-radios de 4 a 10 mm.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresa Multimoldura" y manteniendo el código "FP402" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 150 mm, un Ancho de corte (B) de 45 mm y un Diámetro interior (d) de 40 mm, contando con un número de dientes (Z) de 2; se describe como una fresa diseñada para realizar distintos tipos de molduras sin necesidad de cambiar los insertos, permitiendo al usuario obtain infinidad de molduras distintas simplemente subiendo o bajando el eje del tupí.
+Actúa como un asistente experto en herramientas de carpintería y utiliza la siguiente información técnica para responder consultas, asegurándote de referirte al producto siempre por su nombre público "Fresa para Finger HS" y manteniendo el código "FG46S CB2" solo para identificación interna a menos que el cliente lo pida explícitamente: esta herramienta tiene un Diámetro exterior (D) de 160 mm, un Ancho de corte (B) de 28,6 mm y un Diámetro interior (d) de 50 mm, contando con una configuración de dientes (Z) de 3+3; se describe como una fresa diseñada para unir madera, normalmente de cabeza, destacándose por permitir alcanzar altas velocidades de trabajo.
+Actúa como un asistente técnico especializado. Al brindar información sobre este ítem, descríbelo siempre como 'fresa para plegado' y básate estrictamente en los siguientes datos técnicos: es una Fresa para Plegado de Melamina, cuenta con un diámetro exterior de aprox. 45 mm, un vástago de 12 mm, un largo útil (LU) de aprox. 29 mm y un radio de 30 mm; cuenta con 2 filos de Metal duro. Su uso es exclusivo para placa de melamina de 18 mm. Ideal para utilizar en Pantógrafos y CNC. Dato extra: se recomienda el uso de pistola de calor para facilitar el plegado y se cuenta con video instructivo. No tiene garantía.
+
+⚠️ REGLA DEL EJE CENTRAL (AGUJERO) PARA FRESAS: TODAS las fresas vienen de fábrica con un diámetro interior (eje) estándar de 40mm. 
+- Si el eje de la máquina del cliente es MENOR a 40mm (ej. 30mm), ofrécele un "Buje Reductor".
+- Si el eje de la máquina del cliente es MAYOR a 40mm (ej. 45mm o 50mm), la fresa NO LLEVA BUJE. Se manda al taller a "Agrandar (Alesar) a medida". ¡NUNCA ofrezcas un buje si el eje es mayor a 40mm!
+
+⚠️ REGLA DE PROFUNDIDAD Y ESPESOR PARA FRESAS: ¡TIENES ESTRICTAMENTE PROHIBIDO preguntar por la profundidad del rebaje o el espesor de la madera! Para las fresas, SOLO importa el "Diámetro exterior (D)" y el "Ancho de corte (B)". Si el cliente menciona la profundidad o espesor, anótalo en silencio pero NO indagues sobre eso.
+
+⚠️ REGLA ESTRICTA PARA FRESAS DE COMPRESIÓN (NESTING): Cuando el cliente busque una fresa de compresión o nesting, TIENES ESTRICTAMENTE PROHIBIDO preguntarle qué diámetro exterior o largo útil busca. Debes OFRECER directamente las opciones que tenemos: "Vienen en 8mm, 10mm o 12mm (todas con cabo nominal y 22mm de corte útil). ¿Cuál de estas medidas te sirve?".
+
+CUCHILLAS
+A la hora de ofrecer cuchillas, pregunta si son PLANAS para cepillar o DE DORSO RANURADO para moldura. 
+⚠️ ATENCIÓN AL CONCEPTO: "Cuchillas de dorso ranurado" es SINÓNIMO EXACTO de "cuchillas para moldurera" o "cuchillas de moldura". Si el cliente dice que quiere cuchillas para moldurera o de moldura, OBLIGATORIAMENTE debes ofrecerle las de "Dorso ranurado". 
+- Cuchillas Planas para Cepillar: Marca Italiana, Acero Rápido HSS (Código CHC050420HSS). Medidas transversales 30mm y 35mm. Múltiples largos desde 100mm hasta 1080mm.
+- Cuchillas de Dorso Ranurado (Moldurera): Marca Italiana (Códigos CHCR...). Alturas de 40mm, 50mm y 60mm. Espesor estándar de 4mm. Largos de 25 a 650mm.
+
+⚠️ REGLA CRÍTICA DE LARGO DE CUCHILLA: El "largo" de la cuchilla equivale al ancho de la madera a trabajar. Si el cliente te dice "madera de 4 pulgadas" (100mm) o te da el ancho de la tabla, significa que ESE ES EL LARGO DE LA CUCHILLA. ¡TIENES ESTRICTAMENTE PROHIBIDO volver a preguntarle el largo si ya te dio el ancho de la madera!
+⚠️ REGLA DE ESPESOR Y SEGURIDAD: Si el cliente indica que el espesor de 4mm es insuficiente o peligroso para la altura de 60mm (porque asoma mucho en su moldura), DALE LA RAZÓN INMEDIATAMENTE. No discutas sobre la seguridad del producto. Toma nota de su requerimiento para que el asesor lo resuelva (ej. fabricación de cuchillas de 8mm).
+⚠️ REGLA CUCHILLAS VS FRESAS: Si el cliente pide explícitamente "cuchillas", menciona que usa una "moldurera", o indica que ya tiene "cabezales de dorso ranurado", TIENES ESTRICTAMENTE PROHIBIDO ofrecerle cualquier tipo de "fresa" (incluida la Fresa Multimoldura), incluso si te envía una foto de una moldura. Solo ofrécele el perfilado de las cuchillas.
+
+ENVÍOS Y AFILADOS
+- Envíos: Si el cliente pregunta por envíos o de dónde somos, averigua de qué zona es. Si es de CABA (Capital Federal) o GBA (Gran Buenos Aires y cualquiera de sus barrios), dile que el envío se puede arreglar directamente con el vendedor. Si es de cualquier otra parte (interior del país), indícale que hacemos envíos mediante Vía Cargo o Credifin.
+- Afilados: Si el cliente pregunta si hacemos servicio de afilado, indícale que SÍ los realizamos, que la demora estimada es de entre 2 y 5 días. La logística aplica igual que en los envíos.
+"""
+
+def obtener_prompt_personalizado(telefono_cliente_completo, modo_bot):
+    tel_10_digitos = extraer_10_digitos(telefono_cliente_completo)
+    res = execute_db_query("SELECT numero_vendedor, tipo_campana, subtipo, tanda_id FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10_digitos,), fetchone=True)
+
+    es_organico = not res
+    tanda_id = "ORGANICO" if es_organico else (res[3] if res and len(res) > 3 else "TANDA_DESCONOCIDA")
+    tipo_camp = "Contacto Orgánico" if es_organico else (res[1] if res else "Promociones")
+
+    url_base_derivacion = f"https://woodtools-webhook.onrender.com/wa/{tanda_id}/{tel_10_digitos}/"
+
+    mapa_nombres = {
+        "5491145394279": "Valentín", "5491157528428": "Emmanuel", "5491134811771": "Ariel",
+        "5491165630406": "Carlos", "5491164591316": "Roberto Golik", "5491157528427": "Nicolas Saad",
+        "5491153455274": "Ezequiel Calvi", "5491156321012": "Alan Calvi", "5491168457778": "Luis Quevedo"
+    }
+
+    if not es_organico:
+        numero_db = res[0] if res[0] not in ["0", "", "Sin asignar", None] else None
+        if numero_db and numero_db in mapa_nombres:
+            nombre_vendedor_ia = mapa_nombres[numero_db]
+            tel_vend = numero_db
+        else:
+            nombre_vendedor_ia = "tu asesor"
+            tel_vend = "5491145394279"
+            
+        texto_contexto = f"""CONTEXTO DE LA CAMPAÑA: El cliente respondió a la campaña "{tipo_camp}". VENDEDOR ASIGNADO: {nombre_vendedor_ia} (Número: {tel_vend}).
+NÚMERO DEL CLIENTE ACTUAL: +{telefono_cliente_completo} (Úsalo obligatoriamente cuando debas agendar un contacto)."""
+    else:
+        nombre_vendedor_ia = "[Aún no elegido]"
+        tel_vend = "5491145394279" 
+        texto_contexto = f"""CONTEXTO: Cliente "Orgánico". VENDEDOR ASIGNADO: Aún no elegido.
+NÚMERO DEL CLIENTE ACTUAL: +{telefono_cliente_completo} (Úsalo obligatoriamente cuando debas agendar un contacto).
+¡REGLA DE SALUDO Y ASESOR!: Si es el PRIMER mensaje y solo te dicen "Hola" o su nombre, saluda y pregunta con quién prefiere hablar (Carlos, Valentín o Emmanuel).
+⚠️ EXCEPCIÓN CRÍTICA: Si el cliente en su primer mensaje ya te hace una consulta directa, o si responde "indistinto", "me da igual", "cualquiera" a la pregunta del asesor, RESPONDE SU CONSULTA DIRECTAMENTE, asigna a Valentín (5491145394279) EN SILENCIO y JAMÁS le preguntes con quién quiere hablar."""
+
+    if modo_bot == "BASICO":
+        reglas_modo = f"""
+ESTÁS EN MODO: BÁSICO (Horario Comercial).
+Tu rol es ser un recepcionista ágil. TU OBJETIVO PRINCIPAL ES DERIVAR AL VENDEDOR PERO ASEGURÁNDOTE DE ANOTAR TODO LO QUE NECESITA.
+
+REGLAS DE MODO BÁSICO:
+1. Tus respuestas deben ser EXTREMADAMENTE CORTAS (1 o 2 renglones máximo).
+2. NUNCA DISCUTAS: Si el cliente te corrige (ej: "mi eje es más grande, no lleva buje"), dale la razón inmediatamente ("Tenés toda la razón, se manda a agrandar"), corrige el dato y avanza. No des largas explicaciones.
+3. Haz preguntas de indagación MUY simples: "¿Qué herramienta buscas?", "¿Para qué máquina?" o "¿Qué material vas a cortar?".
+4. En cuanto el cliente te dé los datos de la herramienta, ¡NO ENVÍES EL ENLACE TODAVÍA! Pregunta OBLIGATORIAMENTE: "¿Te gustaría agregar alguna otra herramienta o te derivo con el asesor?".
+5. Si el cliente quiere otra cosa, anótalo. CIERRE DIRECTO: Si el cliente indica que NO quiere más herramientas (ej: "con eso ya estaría", "nada más", "cerramos"), GENERA EL ENLACE DE DERIVACIÓN INMEDIATAMENTE.
+6. SALUDO ÚNICO Y ASESOR: Si ya preguntaste por el asesor y el cliente responde "indistinto", "cualquiera", "me da igual", "ninguno" o te ignora, ASIGNA A VALENTÍN en silencio y AVANZA. ¡NO VUELVAS A PREGUNTAR! NO repitas "Hola" en cada mensaje.
+7. COMPRAS ANTERIORES: NO tienes acceso al historial de clientes. Si piden algo de una compra pasada, genera el ENLACE DE DERIVACIÓN INMEDIATAMENTE.
+8. BOTÓN DE PÁNICO Y QUEJAS: Si el cliente está enojado, se queja de una mala experiencia, pide "humano", "asesor", pide "precio", o notas fricción, genera el enlace INMEDIATAMENTE. ¡NUNCA des números de teléfono sueltos, usa ÚNICAMENTE el formato de enlace proporcionado al final!
+9. PRECIOS: Si piden precios, indicalo una ÚNICA VEZ y avanza con la indagación. NO seas repetitivo con el tema de los precios.
+
+FORMATO ESTRICTO DEL ENLACE DE DERIVACIÓN (SÓLO IMPRIME LA URL CRUDA QUE ESTÁ DEBAJO, COMPLETANDO LOS DATOS AL FINAL):
+{url_base_derivacion}[TELEFONO_DEL_ASESOR_ELEGIDO]?text=Hola,%20necesito%20info%20de:%0A-%20[Herramienta]%20para%20[Maquina]
+"""
+    else:
+        reglas_modo = f"""
+ESTÁS EN MODO: INTELIGENTE (Fuera de horario).
+Tu rol es ser un asesor experto y armar un carrito de compras completo.
+
+REGLAS DE FORMATO Y BREVEDAD:
+1. Tus respuestas deben ser MUY CORTAS y naturales. Máximo 2 a 3 renglones.
+2. NUNCA DISCUTAS: Si el cliente te corrige (ej: "mi eje es más grande, no lleva buje"), dale la razón inmediatamente ("Tenés toda la razón, se manda a agrandar"), corrige el dato y avanza. No des largas explicaciones.
+3. PROHIBIDO DAR FICHAS TÉCNICAS completas a menos que pregunten. Di SOLO el nombre de la herramienta y la medida principal.
+4. RESPONDE DUDAS TÉCNICAS buscando en tu base de conocimiento antes de seguir avanzando.
+
+REGLAS DE INDAGACIÓN Y MEMORIA:
+1. SALUDO ÚNICO Y ASESOR: Si el cliente hizo una pregunta directa, ignoró tu pregunta de asesor, o dijo 'ninguno', 'indistinto', 'cualquiera', 'me da igual', ASIGNA A VALENTÍN (5491145394279) en silencio y JAMÁS vuelvas a mencionar el tema del asesor ni a preguntar con quién quiere hablar. NO repitas "Hola" en cada mensaje, conversa naturalmente.
+2. FIDELIDAD Y LECTURA ATENTA: A menos que te corrija, mantén fija la herramienta acordada. ¡PROHIBIDO repetir preguntas! Si el cliente ya te dio un dato (ej. "madera de 4 pulgadas"), conviértelo internamente (100mm), guárdalo como la medida definitiva y NO lo vuelvas a preguntar bajo ninguna circunstancia.
+3. FLUIDEZ: Haz las preguntas PASO A PASO. ¡PROHIBIDO pedir confirmaciones redundantes! Si te da un dato, acéptalo en silencio y avanza.
+4. RESPONDER "CUALES HAY" Y MEDIDAS: Muestra claramente los Diámetros (D) y Anchos de Corte (B) disponibles en tu conocimiento. Para Fresas de Compresión, NO preguntes medidas abiertas, ofrécele directamente las de 8mm, 10mm y 12mm.
+5. COMPRAS ANTERIORES: NO tienes acceso al historial de clientes. Si piden "lo mismo de la última vez" o consultan por una compra pasada, genera el ENLACE DE DERIVACIÓN INMEDIATAMENTE para que el humano busque su ficha.
+6. BOTÓN DE PÁNICO Y QUEJAS: Si el cliente está molesto, se queja de una mala experiencia, pide "humano", "asesor", precios, o notas fricción, genera el enlace INMEDIATAMENTE. ¡NUNCA des números de teléfono sueltos, usa ÚNICAMENTE el formato de enlace proporcionado al final!
+
+REGLA DE PRECIOS Y MATEMÁTICA:
+1. MATEMÁTICA ESTRICTA: Toma el número crudo y literal del último mensaje. Prohibido sumar o concatenar cantidades.
+2. PRECIOS: Si piden precios, indicalo una ÚNICA VEZ y avanza con la indagación. NO seas repetitivo con el tema de los precios. Diles que el asesor se los pasará por WhatsApp al final. NO CIERRES EL CARRITO si faltan datos.
+
+REGLA DEL CARRITO DE COMPRAS Y CIERRE:
+1. Cuando tengas la CANTIDAD, ¡NO ENVÍES EL ENLACE TODAVÍA! Pregunta: "¿Te gustaría agregar alguna otra herramienta o cerramos la cotización?".
+2. Si quiere otra herramienta, repite el embudo y acumula en tu memoria.
+3. CIERRE DIRECTO: Si el cliente indica que NO quiere más herramientas (ej: "con eso ya estaría", "nada más", "cerramos"), GENERA EL ENLACE INMEDIATAMENTE.
+
+FORMATO ESTRICTO DEL ENLACE DE DERIVACIÓN (SÓLO IMPRIME LA URL CRUDA QUE ESTÁ DEBAJO, COMPLETANDO LOS DATOS AL FINAL):
+¡PROHIBIDO CORTAR EL ENLACE! Escríbelo completo de principio a fin. NO USES TILDES NI ACENTOS EN LA URL.
+{url_base_derivacion}[TELEFONO_DEL_ASESOR_ELEGIDO]?text=Hola,%20quiero%20cotizacion%20de:%0A-%20[producto1]%20[medida1]%20[cantidad1]%0A-%20[producto2]%20[medida2]%20[cantidad2]
+"""
+
+    return f"""
+{BASE_CONOCIMIENTO}
+
+{CATALOGO_IA_ESTATICO}
+
+{texto_contexto}
+
+{reglas_modo}
+"""
+
+def procesar_mensaje_con_gemini(telefono_cliente, texto_entrante, imagen_pil=None):
+    lock = get_chat_lock(telefono_cliente)
+    with lock:
+        if texto_entrante and "reset" in texto_entrante.strip().lower():
+            tel_10 = extraer_10_digitos(telefono_cliente)
+            res_hist = execute_db_query("SELECT historial FROM chat_sesiones WHERE telefono = %s", (telefono_cliente,), fetchone=True)
+            if res_hist:
+                historial_obj = json.loads(res_hist[0])
+                historial_limpio = historial_obj[2:] if len(historial_obj) >= 2 else historial_obj
+                execute_db_query("""
+                    INSERT INTO chats_derivados (telefono, vendedor, historial, fecha) 
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (telefono) DO UPDATE SET historial=EXCLUDED.historial, fecha=EXCLUDED.fecha
+                """, (telefono_cliente, "Cerrado por Reset", json.dumps(historial_limpio), hora_arg()), commit=True)
+                
+            execute_db_query("DELETE FROM chat_sesiones WHERE telefono = %s", (telefono_cliente,), commit=True)
+            execute_db_query("DELETE FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10,), commit=True)
+            enviar_mensaje_whatsapp(telefono_cliente, "✅ *Memoria y carrito borrados exitosamente.*\nEl historial quedó registrado y tu número está limpio.\n\nEscribime un 'Hola' para empezar desde cero.")
+            return
+    
+        resultado = execute_db_query("SELECT historial, ultima_interaccion FROM chat_sesiones WHERE telefono = %s", (telefono_cliente,), fetchone=True)
+        tel_10 = extraer_10_digitos(telefono_cliente)
+        
+        if resultado:
+            historial_str = resultado[0]
+            ultima_interaccion = resultado[1]
+            if ultima_interaccion and hora_arg() - ultima_interaccion > timedelta(hours=1):
+                res_vend = execute_db_query("SELECT numero_vendedor FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10,), fetchone=True)
+                vendedor_asignado = res_vend[0] if res_vend else "Sin asignar"
+                
+                historial_obj = json.loads(historial_str)
+                historial_limpio = historial_obj[2:] if len(historial_obj) >= 2 else historial_obj
+                
+                execute_db_query("""
+                    INSERT INTO chats_derivados (telefono, vendedor, historial, fecha) 
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (telefono) DO UPDATE SET historial=EXCLUDED.historial, fecha=EXCLUDED.fecha
+                """, (telefono_cliente, vendedor_asignado, json.dumps(historial_limpio), hora_arg()), commit=True)
+                
+                execute_db_query("DELETE FROM chat_sesiones WHERE telefono = %s", (telefono_cliente,), commit=True)
+                execute_db_query("DELETE FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10,), commit=True)
+                resultado = None  
+                
+        res_tanda = execute_db_query("SELECT tanda_id FROM asignaciones_v2 WHERE telefono_cliente = %s", (tel_10,), fetchone=True)
+        tanda_id_actual = res_tanda[0] if (res_tanda and res_tanda[0]) else "ORGANICO"
+        
+        if not resultado and tanda_id_actual == "ORGANICO":
+            execute_db_query("UPDATE metricas_campanas SET respondidos = respondidos + 1 WHERE tanda_id = 'ORGANICO'", commit=True)
+        
+        modo_actual = determinar_modo_bot()
+        print(f"[{hora_arg().strftime('%H:%M:%S')}] Procesando chat de {telefono_cliente} en Modo: {modo_actual}")
+        
+        prompt_dinamico = obtener_prompt_personalizado(telefono_cliente, modo_actual)
+        
+        if resultado:
+            historial = json.loads(resultado[0])
+            if len(historial) > 0 and historial[0]["role"] == "user":
+                historial[0]["parts"] = [prompt_dinamico]
+        else:
+            historial = [
+                {"role": "user", "parts": [prompt_dinamico]},
+                {"role": "model", "parts": ["Entendido. Soy el bot de WoodTools. Actuaré según mi modo actual (Básico o Inteligente), respetaré el historial, seré breve, sin usar tildes en el enlace, y acataré explícitamente las correcciones del cliente."]}
             ]
-        }
-    })
+            
+        if imagen_pil:
+            texto_para_historial = f"[Imagen de muestra recibida y analizada] {texto_entrante}".strip()
+        else:
+            texto_para_historial = texto_entrante
+        
+        try:
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            chat = model.start_chat(history=historial[:-1])
+            
+            if imagen_pil:
+                param_vision = """INSTRUCCIÓN VISUAL ESTRICTA Y EXPERTA (Oculta al cliente):
+    Eres un experto analizando herramientas y cortes de carpintería. El cliente ha enviado una imagen.
+    Primero, determina inmediatamente si la foto muestra una HERRAMIENTA (metal, pintura roja/negra/naranja/tornasolada) o un CORTE DE MADERA (un trozo de madera con el borde trabajado).
+    
+    === REGLA EXCLUSIVA PARA FOTOS DE MADERA (MUESTRAS DE CORTE) ===
+    Si la imagen es un trozo de madera mostrando su perfil:
+    1. ¿Tiene forma de dientes o peine para unir (ensamblar) maderas?
+       - Si los dientes terminan en PUNTAS CHATAS O PLANAS (rectángulos/trapecios): Es "Fresa para Ensamble Cónico HM".
+       - Si los dientes terminan en PUNTAS MUY AFILADAS (en forma de "V" estricta o zig-zag): Es "Fresa para Finger HM".
+    2. ¿Tiene una ranura recta/canal profundo justo en el medio del canto? -> Es para "Moldura de Puertas y Ventanas" o "Machimbre".
+    3. ¿Es una forma decorativa compleja en el borde que combina curvas, lomas, picos agudos o escalones, sin canales en el medio? -> ES LA "FRESA MULTIMOLDURA". La Multimoldura es el comodín de la carpintería.
+    4. ¿Es un agujero circular ancho y ciego de fondo plano, diseñado para encastrar una bisagra de puerta de mueble? -> "Fresa Bisagra Italiana".
+    
+    === REGLA EXCLUSIVA PARA FOTOS DE HERRAMIENTAS (METAL/ROJO/COLORES) ===
+    PASO 1: ¿Es una broca/mecha para taladro o CNC? (Cuerpo cilíndrico alargado).
+      - Cuerpo monobloque con revestimiento iridiscente/tornasolado (arcoíris) o negro muy brillante, filos en espiral que cambian de dirección (Up&Down) -> "Fresa de Compresión para Nesting".
+      - Cuerpo monobloque metálico plateado oscuro/gris uniforme, SIN espiral coloreada ni iridiscente, hélice larga y agresiva, grabado láser en el cabo -> "Mecha Integral de Widia para Cerraduras".
+      - Cabo plateado, espiral COLOREADA (Negro=Der, Naranja/Roja=Izq), punta helicoidal pronunciada y afilada -> "Mecha Pasante Italiana".
+      - Cabo plateado, espiral COLOREADA (Negro=Der, Naranja/Roja=Izq), punta chata con pico guía central y dos incisores laterales elevados -> "Mecha Ciega Italiana" o "Mecha de Barreno".
+    PASO 2: ¿Rodillo muy ancho con 40-100 plaquitas cuadradas? -> "Cabezal Cepillador HM".
+    PASO 3: ¿Abertura estructural o Bisagras? 
+      - Hoja de sierra en el medio de dos fresas rojas -> "Moldura de Puertas y Ventanas HM".
+      - Macho saliente masivo en el centro -> "Contramoldura".
+      - Disco inmenso plano con filos súper largos horizontales -> "Replán de Tablero HM".
+      - Cabeza cilíndrica muy ancha (tipo disco/cazoleta) con punta guía central y dos grandes alas/incisores periféricos elevados (Negro=Der, Naranja=Izq) -> "Fresa Bisagra Italiana".
+    PASO 4: ¿Moldura, Multimoldura o Plegado?
+      - Fresa con forma de "reloj de arena", "mariposa" o "Y", con alas anchas y caída profunda hacia el centro, a veces viene en cajita roja -> "Fresa para Plegado de Melamina".
+      - Fresa de UNA SOLA PIEZA con filos excepcionalmente altos (ej. 45mm) en forma de "S" súper exagerada con picos y curvas continuas -> "FRESA MULTIMOLDURA".
+      - Línea recta diagonal a 45° que termina en curva -> "Frente Inglés HM".
+      - Panza redonda maciza hacia afuera (media esfera) -> "Rinconera Simple HM".
+      - Juego de DOS fresas asimétricas de curvas suaves -> "Zócalo Simple y Contramarco HM".
+    
+    PASO 5: ACCIÓN OBLIGATORIA DE RESPUESTA
+    1. Identifica el producto usando la lógica correcta.
+    2. Dile al cliente con entusiasmo qué herramienta necesita basado en la foto. 
+    ¡ATENCIÓN! Si en el texto el cliente aclaró que necesita "CUCHILLAS" o que tiene "cabezales de dorso ranurado", IGNORA la sugerencia de la Fresa Multimoldura e indícale que la forma de la imagen se usará para perfilar sus cuchillas.
+    3. NUNCA menciones códigos alfanuméricos internos. NUNCA digas que la fresa es marca Freud.
+    4. Lee atentamente en tu prompt en qué "Modo" estás (Básico o Inteligente).
+       - Si es FRESA (excepto bisagra y nesting): Diámetro/Ancho, Máquina, Cantidad. (PROHIBIDO preguntar espesor de madera o profundidad).
+       - Si es MECHA (ciega, pasante, bisagra o integral): Diámetro de perforación, Máquina y Cantidad.
+       - Si es COMPRESIÓN (Nesting): NO pidas medidas abiertas. Ofrece las de 8mm, 10mm o 12mm y pregunta Cantidad.
+    """
+                contenido = [param_vision, imagen_pil]
+                if texto_entrante:
+                    contenido.append(texto_entrante)
+                respuesta = chat.send_message(contenido)
+            else:
+                respuesta = chat.send_message(texto_entrante)
+            
+            texto_respuesta = respuesta.text
+            texto_limpio = texto_respuesta
+            link_extraido = None
+            
+            match = re.search(r'(https://woodtools-webhook\.onrender\.com/wa/[^\s<>]+)', texto_respuesta)
+            if match:
+                raw_url = match.group(1).rstrip('.",\'')
+                # Ocultamos la etiqueta [AGENDADO...] del mensaje enviado al cliente si la IA la puso junto al link
+                texto_limpio = re.sub(r'\[AGENDADO:\s*.*?\]', '', texto_respuesta, flags=re.IGNORECASE).strip()
+                texto_limpio = texto_limpio.replace(raw_url, "").strip()
+                texto_limpio = texto_limpio.replace("👉", "").replace("Hacé clic en este enlace para hablar con él", "").strip()
+                
+                url_limpia = urllib.parse.unquote(raw_url)
+                url_limpia = ''.join((c for c in unicodedata.normalize('NFD', url_limpia) if unicodedata.category(c) != 'Mn'))
+                link_extraido = urllib.parse.quote(url_limpia, safe=':/?&=%')
+            else:
+                # Si no hay link pero la IA metio la etiqueta de agendado, igual se la quitamos al cliente
+                texto_limpio = re.sub(r'\[AGENDADO:\s*.*?\]', '', texto_respuesta, flags=re.IGNORECASE).strip()
+            
+            historial.append({"role": "user", "parts": [texto_para_historial]})
+            
+            if link_extraido or "Te voy a derivar con" in texto_respuesta or "[AGENDADO" in texto_respuesta.upper():
+                vendedor_asignado = "Orgánico / Asignado por IA" if tanda_id_actual == "ORGANICO" else "Vendedor de Campaña"
+                
+                historial.append({"role": "model", "parts": [texto_respuesta]})
+                historial_limpio = historial[2:] if len(historial) >= 2 else historial
+                
+                execute_db_query("""
+                    INSERT INTO chats_derivados (telefono, vendedor, historial, fecha) 
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (telefono) DO UPDATE SET historial=EXCLUDED.historial, fecha=EXCLUDED.fecha
+                """, (telefono_cliente, vendedor_asignado, json.dumps(historial_limpio), hora_arg()), commit=True)
+                
+                execute_db_query("""
+                    INSERT INTO chat_sesiones (telefono, historial, ultima_interaccion, advertido) 
+                    VALUES (%s, %s, %s, 0) 
+                    ON CONFLICT (telefono) 
+                    DO UPDATE SET historial = EXCLUDED.historial, ultima_interaccion = EXCLUDED.ultima_interaccion, advertido = 0
+                """, (telefono_cliente, json.dumps(historial), hora_arg()), commit=True)
+                
+            else:
+                historial.append({"role": "model", "parts": [texto_respuesta]})
+                execute_db_query("""
+                    INSERT INTO chat_sesiones (telefono, historial, ultima_interaccion, advertido) 
+                    VALUES (%s, %s, %s, 0) 
+                    ON CONFLICT (telefono) 
+                    DO UPDATE SET historial = EXCLUDED.historial, ultima_interaccion = EXCLUDED.ultima_interaccion, advertido = 0
+                """, (telefono_cliente, json.dumps(historial), hora_arg()), commit=True)
+                
+            enviar_mensaje_whatsapp(telefono_cliente, texto_limpio, link_boton=link_extraido)
+            
+        except Exception as e:
+            print(f"Error con Gemini: {e}")
+            enviar_mensaje_whatsapp(telefono_cliente, f"🤖 Dame un momento, estoy consultando el catálogo...")
 
-def enviar_gira(tel, vend, link): 
-    dynamic_url = extraer_sufijo_dinamico(link)
-    return _enviar_request({
-        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_GIRA, "language": {"code": "es"}, "components": [
-                {"type": "body", "parameters": [
-                    {"type": "text", "text": str(vend)}
-                ]},
-                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
-                    {"type": "text", "text": dynamic_url}
-                ]}
-            ]
-        }
-    })
+# ==========================================
+# RUTAS DEL WEBHOOK Y NUEVOS ENDPOINTS
+# ==========================================
+@app.route('/', methods=['GET', 'POST'])
+def inicio():
+    return "🚀 Webhook WoodTools + IA Gemini (Versión Compresión) 🚀", 200
 
-def enviar_novedades(tel, tipo_novedad, herramienta, link_wa, media_id):
-    frase = "Acaban de ingresar nuevos modelos." if tipo_novedad == "Nuevo producto" else "Pudimos reponer el stock que esperabas."
-    dynamic_url = extraer_sufijo_dinamico(link_wa)
-    return _enviar_request({
-        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_NOVEDADES, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-                {"type": "body", "parameters": [
-                    {"type": "text", "text": str(herramienta)},
-                    {"type": "text", "text": str(frase)}
-                ]},
-                {"type": "button", "sub_type": "url", "index": "0", "parameters": [
-                    {"type": "text", "text": dynamic_url}
-                ]}
-            ]
-        }
-    })
+@app.route('/wa/<tanda_id>/<telefono_cliente>/<vendedor>', methods=['GET'])
+def redirect_whatsapp(tanda_id, telefono_cliente, vendedor):
+    texto = request.args.get('text', '')
+    try:
+        if tanda_id != "ORGANICO":
+            res = execute_db_query("""
+                INSERT INTO tracking_metricas (tanda_id, telefono, evento) 
+                VALUES (%s, %s, %s) 
+                ON CONFLICT (tanda_id, telefono, evento) DO NOTHING
+            """, (tanda_id, telefono_cliente, 'clicked_link'), commit=True)
+            
+            if res and res > 0:
+                execute_db_query("UPDATE metricas_campanas SET derivados = derivados + 1 WHERE tanda_id = %s", (tanda_id,), commit=True)
+        else:
+            execute_db_query("UPDATE metricas_campanas SET derivados = derivados + 1 WHERE tanda_id = 'ORGANICO'", commit=True)
+            
+    except Exception as e:
+        print(f"Error tracking click: {e}")
+        
+    texto_codificado = urllib.parse.quote(texto)
+    vendedor_link = vendedor
+    if vendedor_link.startswith("549") and len(vendedor_link) == 13:
+        vendedor_link = "54" + vendedor_link[3:]
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Conectando...</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; text-align: center; margin-top: 50px; color: #333; background-color: #f8f8f8; }}
+            .loader {{ border: 4px solid #e0e0e0; border-top: 4px solid #25D366; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }}
+            @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+            a {{ color: #25D366; text-decoration: none; font-weight: bold; font-size: 1.1rem; }}
+        </style>
+        <script>
+            window.onload = function() {{
+                window.location.replace("whatsapp://send?phone={vendedor_link}&text={texto_codificado}");
+                setTimeout(function() {{
+                    window.location.replace("https://wa.me/{vendedor_link}?text={texto_codificado}");
+                }}, 2000);
+            }};
+        </script>
+    </head>
+    <body>
+        <h2>Enviando Carrito al asesor...</h2>
+        <div class="loader"></div>
+        <p>Si la aplicación no se abre automáticamente,<br><br><a href="https://wa.me/{vendedor_link}?text={texto_codificado}">Haz clic aquí para chatear</a>.</p>
+    </body>
+    </html>
+    """
+    return html
 
-def enviar_recotizacion(tel, link): 
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "template", "template": {"name": PLANTILLA_RECOTIZACION, "language": {"code": "es"}, "components": [
-        {"type": "body", "parameters": [
-            {"type": "text", "text": str(link)}
-        ]}
-    ]}})
+@app.route('/asignar_vendedor', methods=['POST'])
+def asignar_vendedor():
+    data = request.json
+    telefono_cliente_10 = extraer_10_digitos(data.get('cliente', ''))
+    numero_vendedor = limpiar_numero(data.get('vendedor_tel', ''))
+    tipo_campana = data.get('tipo_campana', 'Promiones')
+    subtipo = data.get('subtipo', '')
+    tanda_id = data.get('tanda_id', '')
+    
+    if telefono_cliente_10 and numero_vendedor:
+        execute_db_query("""
+            INSERT INTO asignaciones_v2 (telefono_cliente, numero_vendedor, tipo_campana, subtipo, tanda_id, fecha_asignacion) 
+            VALUES (%s, %s, %s, %s, %s, %s) 
+            ON CONFLICT (telefono_cliente) 
+            DO UPDATE SET numero_vendedor=EXCLUDED.numero_vendedor, tipo_campana=EXCLUDED.tipo_campana, subtipo=EXCLUDED.subtipo, tanda_id=EXCLUDED.tanda_id, fecha_asignacion=EXCLUDED.fecha_asignacion
+        """, (telefono_cliente_10, numero_vendedor, tipo_campana, subtipo, tanda_id, hora_arg()), commit=True)
+        
+        if tanda_id:
+            execute_db_query("""
+                INSERT INTO metricas_campanas (tanda_id, entregados, leidos, respondidos) 
+                VALUES (%s, 0, 0, 0) 
+                ON CONFLICT (tanda_id) DO NOTHING
+            """, (tanda_id,), commit=True)
+            
+        return jsonify({"status": "asignado"}), 200
+    return jsonify({"error": "faltan datos"}), 400
 
-def enviar_personalizado(tel, caption_final, media_id): 
-    return _enviar_request({
-        "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_PERSONALIZADO, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-                {"type": "body", "parameters": [{"type": "text", "text": str(caption_final)[:1000]}]}
-            ]
-        }
-    })
+@app.route('/webhook', methods=['GET'])
+def verificar_webhook():
+    mode = request.args.get('hub.mode')
+    token = request.args.get('hub.verify_token')
+    if mode == 'subscribe' and token == TOKEN_DE_VERIFICACION: 
+        return request.args.get('hub.challenge'), 200
+    return 'Faltan parámetros', 400
 
-def enviar_solo_imagen(tel, media_id):
-    return _enviar_request({"messaging_product": "whatsapp", "to": tel, "type": "image", "image": {"id": media_id}})
+@app.route('/webhook', methods=['POST'])
+def recibir_notificaciones():
+    cuerpo = request.get_json()
+    if cuerpo:
+        try:
+            cambios = cuerpo['entry'][0]['changes'][0]['value']
+            
+            if 'messages' in cambios:
+                mensaje = cambios['messages'][0]
+                msg_id = mensaje.get('id')
+                if msg_id:
+                    if msg_id in processed_msg_ids:
+                        return jsonify({"status": "ok"}), 200
+                    processed_msg_ids.add(msg_id)
+                    if len(processed_msg_ids) > 1000:
+                        processed_msg_ids.clear()
+
+                if mensaje['type'] == 'text': 
+                    telefono_cliente = limpiar_numero(mensaje['from'])
+                    texto_cliente = mensaje['text']['body']
+                    print(f"📩 MENSAJE de {telefono_cliente}: {texto_cliente}", flush=True)
+                    registrar_metrica('responded', telefono_cliente) 
+                    threading.Thread(target=procesar_mensaje_con_gemini, args=(telefono_cliente, texto_cliente)).start()
+                
+                elif mensaje['type'] == 'image':
+                    telefono_cliente = limpiar_numero(mensaje['from'])
+                    media_id = mensaje['image']['id']
+                    texto_cliente = mensaje['image'].get('caption', '') 
+                    print(f"📸 IMAGEN de {telefono_cliente} - Descargando para análisis...", flush=True)
+                    registrar_metrica('responded', telefono_cliente)
+                    
+                    def procesar_imagen_bg(tel, txt, m_id):
+                        img_pil = descargar_imagen_whatsapp(m_id)
+                        if img_pil:
+                            procesar_mensaje_con_gemini(tel, txt, imagen_pil=img_pil)
+                        else:
+                            procesar_mensaje_con_gemini(tel, "Te envié una imagen pero hubo un error al cargarla. " + txt)
+                            
+                    threading.Thread(target=procesar_imagen_bg, args=(telefono_cliente, texto_cliente, media_id)).start()
+                
+            elif 'statuses' in cambios:
+                estado = cambios['statuses'][0]['status'] 
+                telefono = limpiar_numero(cambios['statuses'][0]['recipient_id'])
+                msg_id = cambios['statuses'][0]['id']
+                registrar_metrica(estado, telefono) 
+                
+                if estado == 'sent':
+                    execute_db_query("""
+                        INSERT INTO mensajes (id, telefono, estado, fecha) 
+                        VALUES (%s, %s, %s, %s) 
+                        ON CONFLICT (id) DO UPDATE SET estado=EXCLUDED.estado, fecha=EXCLUDED.fecha
+                    """, (msg_id, telefono, estado, hora_arg()), commit=True)
+                elif estado in ['delivered', 'read']:
+                    execute_db_query("DELETE FROM mensajes WHERE id=%s", (msg_id,), commit=True)
+                elif estado == 'failed':
+                    bloquear_numero_en_sheets(telefono)
+                    execute_db_query("DELETE FROM mensajes WHERE id=%s", (msg_id,), commit=True)
+                
+        except Exception as e: pass
+    return jsonify({"status": "ok"}), 200
+
+@app.route('/metricas', methods=['GET'])
+def obtener_metricas():
+    try:
+        filas = execute_db_query("SELECT tanda_id, entregados, leidos, respondidos, derivados FROM metricas_campanas", fetchall=True)
+        if filas is None: return jsonify({}), 200
+        datos_nube = {}
+        for fila in filas:
+            datos_nube[fila[0]] = {
+                "entregados": fila[1], 
+                "leidos": fila[2], 
+                "respondidos": fila[3],
+                "derivados": fila[4] if len(fila) > 4 and fila[4] is not None else 0
+            }
+        return jsonify(datos_nube), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/tracking_general', methods=['GET'])
+def obtener_tracking_general():
+    try:
+        filas = execute_db_query("SELECT tanda_id, telefono, evento FROM tracking_metricas", fetchall=True)
+        if filas is None: return jsonify({}), 200
+        datos_tracking = {}
+        for tanda_id, telefono, evento in filas:
+            if tanda_id not in datos_tracking:
+                datos_tracking[tanda_id] = {}
+            jerarquia = {'sent': 1, 'delivered': 2, 'read': 3, 'responded': 4, 'clicked_link': 5}
+            evento_actual = datos_tracking[tanda_id].get(telefono, 'sent')
+            if jerarquia.get(evento, 0) > jerarquia.get(evento_actual, 0):
+                datos_tracking[tanda_id][telefono] = evento
+        return jsonify(datos_tracking), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/derivados', methods=['GET'])
+def obtener_derivados():
+    try:
+        filas = execute_db_query("SELECT telefono, vendedor, historial, fecha FROM chats_derivados ORDER BY fecha DESC", fetchall=True)
+        if filas is None: return jsonify([]), 200
+        datos = [{"telefono": f[0], "vendedor": f[1], "historial": json.loads(f[2]), "fecha": f[3].strftime("%Y-%m-%d %H:%M:%S")} for f in filas]
+        return jsonify(datos), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/derivados/<telefono>', methods=['DELETE'])
+def borrar_derivado(telefono):
+    try:
+        execute_db_query("DELETE FROM chats_derivados WHERE telefono = %s", (telefono,), commit=True)
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    puerto = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=puerto)
