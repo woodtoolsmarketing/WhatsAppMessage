@@ -346,10 +346,17 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\_strptime.py',
    'PYMODULE'),
   ('_threading_local',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\_threading_local.py',
    'PYMODULE'),
   ('annotationlib',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\annotationlib.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\_threading_local.py',
+   'PYMODULE'),
+  ('annotationlib',
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\annotationlib.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('argparse',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\argparse.py',
@@ -474,6 +481,15 @@
   ('blinker.base',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\blinker\\base.py',
    'PYMODULE'),
+  ('blinker',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\blinker\\__init__.py',
+   'PYMODULE'),
+  ('blinker._utilities',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\blinker\\_utilities.py',
+   'PYMODULE'),
+  ('blinker.base',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\blinker\\base.py',
+   'PYMODULE'),
   ('bz2',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\bz2.py',
    'PYMODULE'),
@@ -556,7 +572,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\charset_normalizer\\utils.py',
    'PYMODULE'),
   ('charset_normalizer.version',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\charset_normalizer\\version.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\charset_normalizer\\version.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('cmd',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\cmd.py',
@@ -565,7 +585,11 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\code.py',
    'PYMODULE'),
   ('codeop',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\codeop.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\codeop.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('colorsys',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\colorsys.py',
@@ -943,7 +967,11 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\email\\iterators.py',
    'PYMODULE'),
   ('email.message',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\email\\message.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\email\\message.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('email.parser',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\email\\parser.py',
@@ -967,7 +995,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\et_xmlfile\\xmlfile.py',
    'PYMODULE'),
   ('fileinput',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\fileinput.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\fileinput.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('fnmatch',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\fnmatch.py',
@@ -1022,7 +1054,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\_refresh_worker.py',
    'PYMODULE'),
   ('google.auth._service_account_info',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\_service_account_info.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\google\\auth\\_service_account_info.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('google.auth.api_key',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\api_key.py',
@@ -1109,7 +1145,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\transport\\_http_client.py',
    'PYMODULE'),
   ('google.auth.transport._mtls_helper',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\transport\\_mtls_helper.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\google\\auth\\transport\\_mtls_helper.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('google.auth.transport.mtls',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\transport\\mtls.py',
@@ -1118,7 +1158,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\transport\\requests.py',
    'PYMODULE'),
   ('google.auth.version',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\auth\\version.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\google\\auth\\version.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('google.oauth2',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\oauth2\\__init__.py',
@@ -1154,7 +1198,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\oauth2\\webauthn_handler_factory.py',
    'PYMODULE'),
   ('google.oauth2.webauthn_types',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google\\oauth2\\webauthn_types.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\google\\oauth2\\webauthn_types.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('google_auth_oauthlib',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google_auth_oauthlib\\__init__.py',
@@ -1166,7 +1214,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google_auth_oauthlib\\helpers.py',
    'PYMODULE'),
   ('google_auth_oauthlib.interactive',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\google_auth_oauthlib\\interactive.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\google_auth_oauthlib\\interactive.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('gspread',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\gspread\\__init__.py',
@@ -1226,7 +1278,11 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\http\\cookies.py',
    'PYMODULE'),
   ('http.server',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\http\\server.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\http\\server.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('idna',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\idna\\__init__.py',
@@ -1316,76 +1372,84 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\inspect.py',
    'PYMODULE'),
   ('ipaddress',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\ipaddress.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\ipaddress.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('jinja2',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\__init__.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\__init__.py',
    'PYMODULE'),
   ('jinja2._identifier',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\_identifier.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\_identifier.py',
    'PYMODULE'),
   ('jinja2.async_utils',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\async_utils.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\async_utils.py',
    'PYMODULE'),
   ('jinja2.bccache',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\bccache.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\bccache.py',
    'PYMODULE'),
   ('jinja2.compiler',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\compiler.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\compiler.py',
    'PYMODULE'),
   ('jinja2.constants',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\constants.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\constants.py',
    'PYMODULE'),
   ('jinja2.debug',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\debug.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\debug.py',
    'PYMODULE'),
   ('jinja2.defaults',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\defaults.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\defaults.py',
    'PYMODULE'),
   ('jinja2.environment',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\environment.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\environment.py',
    'PYMODULE'),
   ('jinja2.exceptions',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\exceptions.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\exceptions.py',
    'PYMODULE'),
   ('jinja2.ext',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\ext.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\ext.py',
    'PYMODULE'),
   ('jinja2.filters',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\filters.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\filters.py',
    'PYMODULE'),
   ('jinja2.idtracking',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\idtracking.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\idtracking.py',
    'PYMODULE'),
   ('jinja2.lexer',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\lexer.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\lexer.py',
    'PYMODULE'),
   ('jinja2.loaders',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\loaders.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\loaders.py',
    'PYMODULE'),
   ('jinja2.nodes',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\nodes.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\nodes.py',
    'PYMODULE'),
   ('jinja2.optimizer',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\optimizer.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\optimizer.py',
    'PYMODULE'),
   ('jinja2.parser',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\parser.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\parser.py',
    'PYMODULE'),
   ('jinja2.runtime',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\runtime.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\runtime.py',
    'PYMODULE'),
   ('jinja2.sandbox',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\sandbox.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\sandbox.py',
    'PYMODULE'),
   ('jinja2.tests',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\tests.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\tests.py',
    'PYMODULE'),
   ('jinja2.utils',
-   'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\utils.py',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\utils.py',
    'PYMODULE'),
   ('jinja2.visitor',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\jinja2\\visitor.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\jinja2\\visitor.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('json',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\json\\__init__.py',
@@ -1413,6 +1477,12 @@
    'PYMODULE'),
   ('markupsafe._native',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\markupsafe\\_native.py',
+   'PYMODULE'),
+  ('markupsafe',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\markupsafe\\__init__.py',
+   'PYMODULE'),
+  ('markupsafe._native',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\markupsafe\\_native.py',
    'PYMODULE'),
   ('mimetypes',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\mimetypes.py',
@@ -3611,7 +3681,11 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\platform.py',
    'PYMODULE'),
   ('pprint',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\pprint.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\pprint.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('py_compile',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\py_compile.py',
@@ -3731,7 +3805,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\pycparser\\c_lexer.py',
    'PYMODULE'),
   ('pycparser.c_parser',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\pycparser\\c_parser.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\pycparser\\c_parser.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('pydoc',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\pydoc.py',
@@ -3740,6 +3818,7 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\pydoc_data\\__init__.py',
    'PYMODULE'),
   ('pydoc_data.topics',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\pydoc_data\\topics.py',
    'PYMODULE'),
   ('pyxlsb',
@@ -3762,6 +3841,9 @@
    'PYMODULE'),
   ('pyxlsb.worksheet',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\pyxlsb\\worksheet.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\pydoc_data\\topics.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('queue',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\queue.py',
@@ -4392,7 +4474,11 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\tomllib\\_re.py',
    'PYMODULE'),
   ('tomllib._types',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\tomllib\\_types.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\tomllib\\_types.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('tracemalloc',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\tracemalloc.py',
@@ -4401,10 +4487,17 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\tty.py',
    'PYMODULE'),
   ('typing',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\typing.py',
    'PYMODULE'),
   ('typing_extensions',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\typing_extensions.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\typing.py',
+   'PYMODULE'),
+  ('typing_extensions',
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\typing_extensions.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('tzdata',
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\tzdata\\__init__.py',
@@ -4470,7 +4563,11 @@
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\tzdata\\zoneinfo\\Pacific\\__init__.py',
    'PYMODULE'),
   ('tzdata.zoneinfo.US',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\Desktop\\vscode\\Compresor-base-datos-wt\\venv\\Lib\\site-packages\\tzdata\\zoneinfo\\US\\__init__.py',
+=======
+   'C:\\Users\\WoodTools-01\\Desktop\\vscode\\WhatsAppMessage\\venv\\Lib\\site-packages\\tzdata\\zoneinfo\\US\\__init__.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('unittest',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\unittest\\__init__.py',
@@ -4506,7 +4603,11 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\unittest\\suite.py',
    'PYMODULE'),
   ('unittest.util',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\unittest\\util.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\unittest\\util.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('urllib',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\urllib\\__init__.py',
@@ -4635,7 +4736,11 @@
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\uuid.py',
    'PYMODULE'),
   ('webbrowser',
+<<<<<<< HEAD
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\webbrowser.py',
+=======
+   'C:\\Users\\WoodTools-01\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\webbrowser.py',
+>>>>>>> dd03d995347fde76e394e05182aca88c6806e604
    'PYMODULE'),
   ('wsgiref',
    'C:\\Users\\WoodTools-02\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\wsgiref\\__init__.py',
