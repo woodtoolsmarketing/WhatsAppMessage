@@ -5,6 +5,7 @@ import sys
 import urllib.parse
 import sqlite3
 import re
+import time
 from datetime import datetime, timedelta
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -24,29 +25,7 @@ NOMBRE_HOJA = "Base de datos wt"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
 # ==========================================
-# LÓGICA DE CONTROL DEL BOT INTELIGENTE
-# ==========================================
-def obtener_estado_bot_nube():
-    """Consulta al servidor de Render el estado actual del bot"""
-    try:
-        res = requests.get(f"{URL_SERVIDOR_RENDER}/estado_bot", timeout=10)
-        if res.status_code == 200:
-            return res.json()
-        return None
-    except:
-        return None
-
-def cambiar_estado_bot_nube(nuevo_estado):
-    """Envía la orden al servidor para cambiar el modo ('AUTO', 'ON', 'OFF')"""
-    try:
-        res = requests.post(f"{URL_SERVIDOR_RENDER}/estado_bot", 
-                            json={"configuracion": nuevo_estado}, timeout=10)
-        return res.status_code == 200
-    except:
-        return False
-
-# ==========================================
-# LÓGICA DE RUTAS Y BASE DE DATOS LOCAL
+# LÓGICA DE CONTROL DEL BOT INTELIGENTE Y RUTAS
 # ==========================================
 def hora_arg():
     """Devuelve la hora actual en Argentina (UTC-3)"""
@@ -67,7 +46,37 @@ def obtener_ruta_persistente(nombre_archivo):
 
 ARCHIVO_DB = obtener_ruta_persistente("historial_campanas.db") 
 ARCHIVO_TOKEN = obtener_ruta_persistente("token.json")
+ARCHIVO_LOG = obtener_ruta_persistente("errores_log.txt")
 
+# NUEVA FUNCIÓN ANTI-CONGELAMIENTO
+def log_error(mensaje):
+    """Guarda los errores en un archivo en vez de usar print() que congela los .exe"""
+    try:
+        with open(ARCHIVO_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{hora_arg().strftime('%Y-%m-%d %H:%M:%S')}] {mensaje}\n")
+    except:
+        pass
+
+def obtener_estado_bot_nube():
+    try:
+        res = requests.get(f"{URL_SERVIDOR_RENDER}/estado_bot", timeout=10)
+        if res.status_code == 200:
+            return res.json()
+        return None
+    except:
+        return None
+
+def cambiar_estado_bot_nube(nuevo_estado):
+    try:
+        res = requests.post(f"{URL_SERVIDOR_RENDER}/estado_bot", 
+                            json={"configuracion": nuevo_estado}, timeout=10)
+        return res.status_code == 200
+    except:
+        return False
+
+# ==========================================
+# BASE DE DATOS LOCAL
+# ==========================================
 def inicializar_db():
     try:
         conn = sqlite3.connect(ARCHIVO_DB)
@@ -93,7 +102,7 @@ def inicializar_db():
         try: cursor.execute('ALTER TABLE historial ADD COLUMN total_base INTEGER DEFAULT 0')
         except sqlite3.OperationalError: pass
         conn.commit(); conn.close()
-    except Exception as e: print(f"Error iniciando DB: {e}")
+    except Exception as e: log_error(f"Error iniciando DB: {e}")
 
 def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta, estado_individual, total_base=0):
     try:
@@ -105,7 +114,7 @@ def registrar_envio_db(tanda_id, cliente, telefono, vendedor, tipo, herramienta,
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (tanda_id, fecha, cliente, telefono, vendedor, tipo, herramienta, estado_individual, "PROCESANDO", total_base))
         conn.commit(); conn.close()
-    except Exception as e: print(f"Error guardando en DB: {e}")
+    except Exception as e: log_error(f"Error guardando en DB: {e}")
 
 def actualizar_estado_tanda(tanda_id, estado_final):
     try:
@@ -113,7 +122,7 @@ def actualizar_estado_tanda(tanda_id, estado_final):
         cursor = conn.cursor()
         cursor.execute('UPDATE historial SET estado_tanda = ? WHERE tanda_id = ?', (estado_final, tanda_id))
         conn.commit(); conn.close()
-    except Exception as e: print(f"Error actualizando tanda: {e}")
+    except Exception as e: log_error(f"Error actualizando tanda: {e}")
 
 def obtener_tandas_campanas():
     try:
@@ -140,7 +149,7 @@ def obtener_datos_reporte_por_tandas(lista_tandas):
         conn.close()
         return df
     except Exception as e:
-        print(f"Error armando el reporte detallado: {e}")
+        log_error(f"Error armando el reporte detallado: {e}")
         return pd.DataFrame()
 
 # ==========================================
@@ -151,7 +160,7 @@ PLANTILLA_RESCATE = "reactivacion_cliente"
 PLANTILLA_GIRA = "aviso_visita_vendedor"
 PLANTILLA_RECOTIZACION = "recotizacion_prospecto" 
 PLANTILLA_NOVEDADES = "aviso_novedades_wt"
-PLANTILLA_PERSONALIZADO = "contacto_personalizado_wt"
+PLANTILLA_PERSONALIZADO = "personalizado_2"
 
 DB_VENDEDORES = {
     "Valentín": ["5491145394279"], 
@@ -381,22 +390,15 @@ def leer_desde_google_sheets(nombre_pestana=""):
             es_revendedor = False
             nombre_lower = cliente_nom.lower()
             
-            # 1. Filtro por Código de Cliente
             if cod_cliente and cod_cliente in REVENDEDORES_CODIGOS:
                 es_revendedor = True
-                
-            # 2. Filtro infalible por etiqueta explícita en el nombre
             elif "(reventa)" in nombre_lower or "reventa" in nombre_lower or "revendedor" in nombre_lower:
                 es_revendedor = True
-                
             else:
-                # 3. Buscar en la lista aislada de nombres
                 for rev_nombre in REVENDEDORES_NOMBRES:
                     if rev_nombre.lower() in nombre_lower:
                         es_revendedor = True
                         break
-                        
-                # 4. Buscar cruzado en los valores del diccionario
                 if not es_revendedor:
                     for cod, nombre_dict in REVENDEDORES_CODIGOS.items():
                         palabra_clave_dict = nombre_dict.split(" ")[0].lower()
@@ -468,8 +470,6 @@ def conectar_y_procesar(nombre_pestana=""):
                 if raw_tel not in invalidos:
                     invalidos.append(raw_tel)
             
-        # Si es revendedor, forzamos que todos sus números vayan a la lista de inválidos
-        # Esto hace que visualmente figure en la tabla pero se marque como DESCARTADO
         if registro.get('Es_Revendedor', False):
             invalidos.extend(validos)
             validos = []
@@ -501,25 +501,40 @@ def revisar_numeros_problematicos():
 def identificar_cols_productos(df): return ['Sierras', 'Cuchillas', 'Mechas', 'Fresas', 'Cabezales']
 
 def _enviar_request(data):
+    """VERSIÓN ANTI-CONGELAMIENTO: Registra errores sin colapsar la app."""
     try:
         headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}", "Content-Type": "application/json"}
-        res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data)
-        if res.status_code == 200: return True, "OK"
+        res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data, timeout=10)
+        
+        time.sleep(1) # Pausa obligatoria para no ahogar la API
+        
+        if res.status_code == 200: 
+            return True, "OK"
         elif 400 <= res.status_code < 500: 
-            print("ERROR META:", res.json()) 
+            log_error(f"META RECHAZÓ EL MENSAJE (Error 4xx): {res.text}") 
             return False, "ERROR DEL CLIENTE"
-        else: return False, "ERROR DEL SERVIDOR" 
-    except Exception: return False, "ERROR DEL SERVIDOR"
+        else: 
+            log_error(f"ERROR DEL SERVIDOR META (Error 5xx): {res.text}")
+            return False, "ERROR DEL SERVIDOR" 
+    except requests.exceptions.Timeout:
+        log_error("Timeout: Meta tardó demasiado en responder.")
+        return False, "TIMEOUT"
+    except Exception as e: 
+        log_error(f"Falla de red crítica: {str(e)}")
+        return False, "ERROR DE RED O SERVIDOR"
     
 def subir_imagen_whatsapp(ruta):
     try:
         headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}"}
         files = {'file': (os.path.basename(ruta), open(ruta, 'rb'), 'image/jpeg')}
         data = {'messaging_product': 'whatsapp'}
-        res = requests.post(f"{BASE_URL}/media", headers=headers, files=files, data=data)
+        res = requests.post(f"{BASE_URL}/media", headers=headers, files=files, data=data, timeout=20)
         if res.status_code == 200: return res.json()['id']
+        log_error(f"Error subiendo imagen a Meta: {res.text}")
         return None
-    except: return None
+    except Exception as e:
+        log_error(f"Excepción subiendo imagen: {e}")
+        return None
 
 # ==========================================
 # MAGIA DE BOTONES: EXTRACTOR DE ENLACE DINÁMICO
@@ -607,12 +622,18 @@ def enviar_recotizacion(tel, link):
         ]}
     ]}})
 
-def enviar_personalizado(tel, caption_final, media_id): 
+def enviar_personalizado(tel, caption_final, link_completo, media_id): 
+    dynamic_url = extraer_sufijo_dinamico(link_completo)
+    
+    # Creamos los componentes. Si la plantilla en Meta ya NO tiene el {{1}} en el cuerpo, 
+    # la línea del medio ("type": "body") dará error. 
+    # Si la plantilla en Meta SÍ tiene el {{1}}, funcionará perfecto.
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PERSONALIZADO, "language": {"code": "es"}, "components": [
                 {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-                {"type": "body", "parameters": [{"type": "text", "text": str(caption_final)[:1000]}]}
+                {"type": "body", "parameters": [{"type": "text", "text": str(caption_final)[:1000]}]},
+                {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": dynamic_url}]}
             ]
         }
     })

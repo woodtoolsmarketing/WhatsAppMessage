@@ -1,22 +1,22 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
-from PIL import Image, ImageTk 
+from PIL import Image, ImageTk
 import pandas as pd
 import threading
 import os
-import sys 
+import sys
 import time
-import ctypes  
+import ctypes
 import urllib.parse
-import requests  
+import requests
 import json
 import re
 from datetime import datetime, timedelta
 
-import mainCode 
+import mainCode
 
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
-COLOR_ROJO_WT = "#a41e22" 
+COLOR_ROJO_WT = "#a41e22"
 COLOR_PANELES = "#f5f5f5"
 
 def obtener_ruta_interna(ruta_relativa):
@@ -30,11 +30,11 @@ class WoodToolsApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Gestor de Marketing WhatsApp v12.0 - CRM")
-        self.root.geometry("1500x900") 
-        self.root.state('zoomed') 
-        self.root.configure(bg=COLOR_ROJO_WT) 
+        self.root.geometry("1500x900")
+        self.root.state('zoomed')
+        self.root.configure(bg=COLOR_ROJO_WT)
         self.cancelar_envio = False
-        self.tipo_base_actual = "clientes" 
+        self.tipo_base_actual = "clientes"
         
         mainCode.inicializar_db()
         
@@ -46,15 +46,15 @@ class WoodToolsApp:
         menu_reportes.add_command(label="Ver rendimiento de la campaña", command=self.abrir_rendimiento)
         
         try:
-            myappid = 'woodtools.gestormarketing.12.0' 
+            myappid = 'woodtools.gestormarketing.12.0'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        except Exception: pass 
+        except Exception: pass
             
         ruta_ico = obtener_ruta_interna(r"Imagenes\logo.ico")
         if not os.path.exists(ruta_ico): ruta_ico = obtener_ruta_interna("logo.ico")
             
         if os.path.exists(ruta_ico):
-            try: 
+            try:
                 self.root.iconbitmap(ruta_ico)
                 icono_barra = ImageTk.PhotoImage(Image.open(ruta_ico))
                 self.root.iconphoto(False, icono_barra)
@@ -97,13 +97,13 @@ class WoodToolsApp:
         
         self.config_bot_actual = "AUTO"
 
-        frame_filtros = tk.LabelFrame(root, text="Filtros", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")) 
+        frame_filtros = tk.LabelFrame(root, text="Filtros", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
         frame_filtros.pack(fill="x", padx=20, pady=2)
         
         tk.Label(frame_filtros, text="Nombre:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=0)
         self.entry_nombre = tk.Entry(frame_filtros)
         self.entry_nombre.grid(row=0, column=1, padx=5)
-        self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros) 
+        self.entry_nombre.bind("<KeyRelease>", self.aplicar_filtros)
         
         tk.Label(frame_filtros, text="Zona/Interés:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=2)
         self.combo_zona = ttk.Combobox(frame_filtros, state="readonly", width=10)
@@ -149,7 +149,7 @@ class WoodToolsApp:
         self.lbl_novedad_herramienta = tk.Label(self.frame_dinamico, text="Herramienta:", bg=COLOR_PANELES, fg="black", font=("Arial", 8, "bold"))
         self.combo_novedad_herramienta = ttk.Combobox(self.frame_dinamico, state="readonly", width=20)
 
-        self.lbl_aviso_meta = tk.Label(self.frame_dinamico, text="🔒 Plantilla Meta", fg="#d32f2f", bg=COLOR_PANELES, font=("Arial", 8, "bold")) 
+        self.lbl_aviso_meta = tk.Label(self.frame_dinamico, text="🔒 Plantilla Meta", fg="#d32f2f", bg=COLOR_PANELES, font=("Arial", 8, "bold"))
         self.lbl_tip_tags = tk.Label(self.frame_dinamico, text="💡 Usa [CLIENTE] y [LINK]", fg="#1976d2", bg=COLOR_PANELES, font=("Arial", 8, "italic"))
 
         self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen (Obligatoria)", command=self.seleccionar_imagen)
@@ -167,7 +167,7 @@ class WoodToolsApp:
         self.combo_novedad_subtipo.bind("<<ComboboxSelected>>", self.actualizar_preview)
         self.combo_novedad_herramienta.bind("<<ComboboxSelected>>", self.actualizar_preview)
 
-        self.actualizar_inputs_dinamicos() 
+        self.actualizar_inputs_dinamicos()
 
         frame_accion = tk.LabelFrame(root, text="Panel de Control", pady=5, padx=20, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"), relief="groove", bd=2)
         frame_accion.pack(fill="x", side="bottom", padx=20, pady=5)
@@ -211,13 +211,13 @@ class WoodToolsApp:
         if os.path.exists(ruta_final):
             try:
                 img_pil = Image.open(ruta_final)
-                h_deseado = 55 
+                h_deseado = 55
                 w, h = img_pil.size
                 new_w = int((h_deseado/h)*w)
                 img_resized = img_pil.resize((new_w, h_deseado), Image.Resampling.LANCZOS)
                 self.logo_img = ImageTk.PhotoImage(img_resized)
-                ovalo_w = new_w + 30 
-                ovalo_h = h_deseado + 10 
+                ovalo_w = new_w + 30
+                ovalo_h = h_deseado + 10
                 canvas = tk.Canvas(parent, width=ovalo_w, height=ovalo_h, bg=COLOR_ROJO_WT, highlightthickness=0)
                 canvas.pack(side=tk.RIGHT, padx=15)
                 canvas.create_oval(2, 2, ovalo_w-2, ovalo_h-2, fill=COLOR_PANELES, outline=COLOR_PANELES)
@@ -1085,7 +1085,7 @@ class WoodToolsApp:
                 elif tipo == "Personalizado": 
                     txt_base = params.get('texto_extra','')
                     caption_final = txt_base.replace("[CLIENTE]", row['Cliente'])
-                    res, tipo_error = mainCode.enviar_personalizado(t, caption_final, media_id)
+                    res, tipo_error = mainCode.enviar_personalizado(t, caption_final, link, media_id)
 
                 if res: ok += 1; estado_individual = "ENVIADO CORRECTAMENTE"
                 else: 
