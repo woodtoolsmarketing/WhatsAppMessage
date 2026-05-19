@@ -174,106 +174,54 @@ DB_VENDEDORES = {
     "Luis": ["5491168457778"]
 }
 
-REVENDEDORES_CODIGOS = {
-    "4652": "Abalos Esteban",
-    "2253": "Acinar",
-    "14285": "Acosta Hernan Dario Herrajes tafildel valle",
-    "7195": "Afilacion Soriano",
-    "4373": "Afipar",
-    "1889": "Aldo Rodruguez /Idecort",
-    "1789": "Alonso Matias",
-    "11858": "ALENKA GRACIELA",
-    "10344": "Arbelaiz",
-    "11699": "ANTONIJEVIC IVAN DANIEL",
-    "9239": "Barnes problemático pagar",
-    "12394": "Battaller Estebam",
-    "11785": "Bevacqua Manuel",
-    "12430": "BertoLazzi Alejandra",
-    "905": "Bidinost",
-    "9931": "BIMETAL",
-    "9288": "Blanco Maq. (Staffolani Roman)",
-    "11611": "COOP.DE TRAB EL CARANDA LIM F.",
-    "1558": "Jose Blas Pinamar",
-    "879": "Ciganoto",
-    "11775": "Braga Alicia ex lucich (6412)",
-    "214": "setefratti",
-    "10679": "BREDICE MAURO DANIEL",
-    "12515": "Bhoor AIA",
-    "10428": "Bruni Marcos",
-    "7933": "Bulonera Torcuato",
-    "94": "Cabello Susana (Af del sur Damian)",
-    "2514": "Capovilla Ernesto",
-    "906": "Catavorello",
-    "1538": "Chiappa Sierras",
-    "11268": "DELBRE",
-    "3640": "TECNO L.D.",
-    "6626": "Dartamani Carlos",
-    "14639": "DUERO AFILADO( Cordoba)",
-    "2633": "Ellemberger` Edgar",
-    "6421": "Fisicaro Mauricio",
-    "2123": "Forti Oscar (Bruni)",
-    "9541": "Fraile Julio",
-    "228": "FREMECH Ariel Gomez",
-    "14181": "Fernadez Jorge Luis El Rey de la melamina",
-    "2691": "Grodnienski Max (Abraham Maq.)",
-    "1092": "IMAD S.R.L.",
-    "9645": "Javier Haedo",
-    "5789": "Keil Gerardo vendedor 32",
-    "7986": "Kranjac Hnos (afilador)",
-    "4446": "Kurtz Adolfo",
-    "8907": "La casa de las Herramientas",
-    "14791": "LEPRI MARIANO",
-    "3044": "lagomarcino",
-    "1369": "Mancardi(afilador)",
-    "841": "Maq Caseros",
-    "5809": "Maq Picotto Mario",
-    "12043": "MACHENA SRL DI CESARE",
-    "8966": "Martiren Ruben(glorioso 10622)",
-    "138": "Met Picotto (edgardo)",
-    "6494": "Monica- Todo Filo",
-    "1214": "MULTIPLACAS SA",
-    "5677": "Moscuzza Daniel",
-    "2569": "Mutilva",
-    "691": "NEA GESTION S.R.L.",
-    "7851": "Palavecino",
-    "820": "Paoletti",
-    "2591": "Piccini Martin (Afilados Postai)",
-    "8467": "Riquelme Luis (bariloche)",
-    "7317": "Romero Guadalberto/Garcia H",
-    "15904": "EDMUNDO Y ANDRES LACONI",
-    "136": "Rupper Hugo",
-    "8848": "S.P.M",
-    "9251": "Santana",
-    "12100": "Sergio martinez",
-    "10966": "SERVIMAD Ciccioli",
-    "5005": "Sierras Andinas(afilador y revendedor)",
-    "1676": "Sierras del Parana",
-    "13328": "Silva Nicolas Martin",
-    "5207": "Talleres Ciudadela",
-    "3138": "Taurus",
-    "4257": "TODO AFILADO VIZOSO",
-    "9360": "Torres Graciela",
-    "12631": "VADI PLAC",
-    "3023": "Vila",
-    "4682": "Waintrub",
-    "3730": "Wegiers Angel (Multiplacas)",
-    "7216": "Zaninovic",
-    "9766": "Zapico Sebastian",
-    "9220": "Zubizarreta Luis Alberto(afilador)",
-    "14481": "MAGARO SA (FERRETERIA)"
-}
+# ==========================================
+# LÓGICA DE DETECCIÓN DE TELÉFONOS (MOVIDA ARRIBA PARA FILTROS)
+# ==========================================
+def formatear_telefono(numero_raw):
+    num_str = str(numero_raw).replace(" ", "").replace("-", "")
+    num_str = ''.join(filter(str.isdigit, num_str))
+    
+    if not num_str: return ""
+    if num_str.startswith("549") and len(num_str) == 13: return num_str
+    if num_str.startswith("54") and len(num_str) == 12: return "549" + num_str[2:]
+    if num_str.startswith("549"): num_str = num_str[3:]
+    elif num_str.startswith("54"): num_str = num_str[2:]
+    if num_str.startswith("0"): num_str = num_str[1:]
+    
+    match_15 = re.match(r'^([1-3]\d{1,3})15(\d{6,8})$', num_str)
+    if match_15:
+        area = match_15.group(1); resto = match_15.group(2)
+        if len(area) + len(resto) == 10: return f"549{area}{resto}"
+        
+    if num_str.startswith("15") and len(num_str) == 10: return f"54911{num_str[2:]}"
+    if len(num_str) == 8 and num_str[0] in "234567": return f"54911{num_str}"
+    if len(num_str) == 10: return f"549{num_str}"
+    
+    return num_str
 
-REVENDEDORES_NOMBRES = [
-    "BIRBA LEANDRO JORGE",
-    "Dutra Alexis Uruguay",
-    "Garcia Joaquin",
-    "IFRAN",
-    "Mastro Mauro hermanos",
-    "Oscar de casa nova",
-    "Sergio Pastre",
-    "PAIVA ESTEBAN",
-    "VIDELA RAUL ALEJANDRO"
-]
+def validar_formato_numero(numero_raw):
+    numero_fmt = formatear_telefono(numero_raw)
+    if not numero_fmt: return False, ""
+    if re.match(r'^549\d{10}$', numero_fmt): return True, numero_fmt
+    return False, numero_fmt
+
+# ==========================================
+# LISTA NEGRA: FILTRO SÚPER AGRESIVO (Sufijos)
+# ==========================================
+NUMEROS_DESCARTADOS_STR = "3764456633-3764420402-3815773623-1553435836-5491142596405-5493434260308-5491166334158-5493782413709-5491147493121-5491154251121-5492364450824-5491142813861-5491142963860-5491153872222-5491157655862-1154050797-1126446881-5491142520944-5491142591920-5491144994231-5493414850586-5493414027107-5493464493941-15687979-910394903-5493704342539-5493704827455-02254484189-5491158079933-5491121943744-1553024913-15629744-5493471423090-5493758401827-5493758457227-5491142082790-5493456420485-5491136564978-5491147412488-154035917-1552262796-15494747-5493456420587-5493456425121-5493456407212-5491144992948-5491146935000-5491142620738-5492284585872-5493564424444-5491132524577-5491142701611-5491132524568-3541520902-5493514727689-5493515115009-5492984428507-5492984291750-5493515122708-5493514701559-5491160189996-5491142083212-1558783465-3855385790-5491144045153-5491145812526-5491145842070-5493756481198-5493764642470-5491146535716-5491160928067-5493772635537-5493447470682-5491148137853-5491136440291-5491142544007-5491142549017-5491155062683-81213301730-5491143510462-5491144440644-37524941610-15694529-299418756-5492994426721-5492994583044-5492215682014-5492284443347-5491160800008-5493764426849-5493414623087-261424667-5491140537938-5491142676040-5493415501731-5493417787265-5491147304400-5492914888008-5491147466782-5493454903125-5491136278164-5493751423105-5491161972833-155635302-5492614521113-5492615154076-5493424608997-5493424308844-5492944428600-3454272913-155283942-1164393869-15555463-15690838-1553978911-5492364635567-5492494316964-5499249443885-5492944610381-5492944499227-5493434840824-5493436207265-5493436227540-1131137846-5491146536397-25124402244-5492914550352-5492914120493-5492915225300-3751303003-5491141800506-5491145260205-5491145399399-5491134811771-5491130976000-5491134005566-5491145640940-5491158431455-5491134609120-5491145640831-5491156321012-5491157528428-5491164591316-5491168457778-5491157528427-5491165630406-5491145394279-5493816706400-5491153452371-5491121827274-5491165667851-5491134334827-5491131761431-5491133336664-5491164318838-5491164395047-5491134665339-5491157626801-5491131165563-549114008550"
+
+DESCARTADOS_RAW = set(NUMEROS_DESCARTADOS_STR.split("-"))
+DESCARTADOS_SUFIJOS = set()
+
+# Pre-computamos todas las terminaciones posibles de la lista negra
+# Esto garantiza que si Excel tiene "549..." y la lista negra no (o viceversa), siempre haya match.
+for num in DESCARTADOS_RAW:
+    n_limpio = ''.join(filter(str.isdigit, num))
+    if not n_limpio: continue
+    DESCARTADOS_SUFIJOS.add(n_limpio)
+    if len(n_limpio) >= 10: DESCARTADOS_SUFIJOS.add(n_limpio[-10:])
+    if len(n_limpio) >= 9:  DESCARTADOS_SUFIJOS.add(n_limpio[-9:])
+    if len(n_limpio) >= 8:  DESCARTADOS_SUFIJOS.add(n_limpio[-8:])
 
 LISTA_OBSERVADOS = []
 
@@ -386,26 +334,31 @@ def leer_desde_google_sheets(nombre_pestana=""):
             
             cod_cliente = aplicar_correcciones_texto(row.get('Código de cliente', row.get('Número de cliente', ''))).strip()
             
-            # --- FILTRO DE REVENDEDORES ---
+            # --- NUEVO FILTRO DE DESCARTES (MULTI-COINCIDENCIA AGRESIVA) ---
             es_revendedor = False
-            nombre_lower = cliente_nom.lower()
             
-            if cod_cliente and cod_cliente in REVENDEDORES_CODIGOS:
-                es_revendedor = True
-            elif "(reventa)" in nombre_lower or "reventa" in nombre_lower or "revendedor" in nombre_lower:
-                es_revendedor = True
-            else:
-                for rev_nombre in REVENDEDORES_NOMBRES:
-                    if rev_nombre.lower() in nombre_lower:
-                        es_revendedor = True
-                        break
-                if not es_revendedor:
-                    for cod, nombre_dict in REVENDEDORES_CODIGOS.items():
-                        palabra_clave_dict = nombre_dict.split(" ")[0].lower()
-                        if len(palabra_clave_dict) > 3 and palabra_clave_dict in nombre_lower:
-                            es_revendedor = True
-                            break
-            # ------------------------------
+            for tel_raw in tels_raw:
+                tel_limpio = ''.join(filter(str.isdigit, tel_raw))
+                if not tel_limpio: continue
+                
+                # Pasamos el número del Excel por la función que arregla los +549 y los 15
+                tel_fmt = formatear_telefono(tel_limpio)
+                
+                # Desglosamos el número en todas sus versiones posibles (completo, últimos 10, últimos 9, últimos 8)
+                sufijos_a_revisar = [tel_limpio, tel_fmt]
+                if len(tel_limpio) >= 10: sufijos_a_revisar.append(tel_limpio[-10:])
+                if len(tel_limpio) >= 9:  sufijos_a_revisar.append(tel_limpio[-9:])
+                if len(tel_limpio) >= 8:  sufijos_a_revisar.append(tel_limpio[-8:])
+                
+                if len(tel_fmt) >= 10: sufijos_a_revisar.append(tel_fmt[-10:])
+                if len(tel_fmt) >= 9:  sufijos_a_revisar.append(tel_fmt[-9:])
+                if len(tel_fmt) >= 8:  sufijos_a_revisar.append(tel_fmt[-8:])
+                
+                # Si CUALQUIERA de las versiones de este número coincide con la lista negra, queda descartado
+                if any(suf in DESCARTADOS_SUFIJOS for suf in sufijos_a_revisar if suf):
+                    es_revendedor = True
+                    break
+            # ----------------------------------------------------------------
             
             if cliente_nom != "Sin Nombre" and cliente_nom != "Cliente Sin Nombre":
                 registros.append({
@@ -420,36 +373,6 @@ def leer_desde_google_sheets(nombre_pestana=""):
         return registros
     except Exception: return []
 
-# ==========================================
-# LÓGICA DE DETECCIÓN DE TELÉFONOS
-# ==========================================
-def formatear_telefono(numero_raw):
-    num_str = str(numero_raw).replace(" ", "").replace("-", "")
-    num_str = ''.join(filter(str.isdigit, num_str))
-    
-    if not num_str: return ""
-    if num_str.startswith("549") and len(num_str) == 13: return num_str
-    if num_str.startswith("54") and len(num_str) == 12: return "549" + num_str[2:]
-    if num_str.startswith("549"): num_str = num_str[3:]
-    elif num_str.startswith("54"): num_str = num_str[2:]
-    if num_str.startswith("0"): num_str = num_str[1:]
-    
-    match_15 = re.match(r'^([1-3]\d{1,3})15(\d{6,8})$', num_str)
-    if match_15:
-        area = match_15.group(1); resto = match_15.group(2)
-        if len(area) + len(resto) == 10: return f"549{area}{resto}"
-        
-    if num_str.startswith("15") and len(num_str) == 10: return f"54911{num_str[2:]}"
-    if len(num_str) == 8 and num_str[0] in "234567": return f"54911{num_str}"
-    if len(num_str) == 10: return f"549{num_str}"
-    
-    return num_str
-
-def validar_formato_numero(numero_raw):
-    numero_fmt = formatear_telefono(numero_raw)
-    if not numero_fmt: return False, ""
-    if re.match(r'^549\d{10}$', numero_fmt): return True, numero_fmt
-    return False, numero_fmt
 
 def conectar_y_procesar(nombre_pestana=""):
     global LISTA_OBSERVADOS
@@ -474,7 +397,7 @@ def conectar_y_procesar(nombre_pestana=""):
             invalidos.extend(validos)
             validos = []
             registro['Es_Valido'] = False
-            registro['Tel_Formateado'] = "Descartado (Revendedor)"
+            registro['Tel_Formateado'] = "Descartado (Lista Negra)"
         else:
             registro['Es_Valido'] = len(validos) > 0 
             if validos: registro['Tel_Formateado'] = " | ".join(validos)
@@ -624,10 +547,6 @@ def enviar_recotizacion(tel, link):
 
 def enviar_personalizado(tel, caption_final, link_completo, media_id): 
     dynamic_url = extraer_sufijo_dinamico(link_completo)
-    
-    # Creamos los componentes. Si la plantilla en Meta ya NO tiene el {{1}} en el cuerpo, 
-    # la línea del medio ("type": "body") dará error. 
-    # Si la plantilla en Meta SÍ tiene el {{1}}, funcionará perfecto.
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
             "name": PLANTILLA_PERSONALIZADO, "language": {"code": "es"}, "components": [
