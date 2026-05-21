@@ -477,7 +477,7 @@ class WoodToolsApp:
             tels = row.get('Telefonos_Raw', [])
             cod = row.get('Código de cliente', '')
             texto_cod = f"[{cod}] " if cod else ""
-            es_rev = " [ES REVENDEDOR]" if row.get('Es_Revendedor') else ""
+            es_rev = " [LISTA NEGRA]" if row.get('Es_Revendedor') else ""
             msg += f"• {texto_cod}{row['Cliente']}{es_rev} -> {' | '.join(tels) if tels else 'Sin números'}\n"
         
         vent = tk.Toplevel(self.root)
@@ -496,7 +496,7 @@ class WoodToolsApp:
                 tels = row.get('Telefonos_Raw', [])
                 datos_export.append({
                     "Código de cliente": row.get('Código de cliente', ''),
-                    "Nombre": row['Cliente'] + (" [Revendedor]" if row.get('Es_Revendedor') else ""),
+                    "Nombre": row['Cliente'] + (" [Lista Negra]" if row.get('Es_Revendedor') else ""),
                     "Número": " | ".join(tels) if tels else "Sin número"
                 })
                 
