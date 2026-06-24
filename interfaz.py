@@ -44,6 +44,10 @@ class WoodToolsApp:
         menu_reportes = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Reportes", menu=menu_reportes)
         menu_reportes.add_command(label="Ver rendimiento de la campaña", command=self.abrir_rendimiento)
+
+        menu_bot = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Bot", menu=menu_bot)
+        menu_bot.add_command(label="Enseñar / Corregir al bot", command=self.abrir_correcciones_bot)
         
         try:
             myappid = 'woodtools.gestormarketing.12.0'
@@ -286,6 +290,130 @@ class WoodToolsApp:
     # ==========================================
     # PANTALLA DE CHATS PENDIENTES / ABANDONADOS
     # ==========================================
+    def abrir_correcciones_bot(self):
+        """Ventana para enseñarle/corregir al bot. Usa los endpoints /aprendizaje(s)
+        del servidor: las correcciones se aplican en el próximo mensaje, sin redeploy."""
+        vent = tk.Toplevel(self.root)
+        vent.title("Enseñar / Corregir al Bot")
+        vent.geometry("820x680")
+        vent.configure(bg="white")
+
+        AMBITOS = ["global", "Sierras", "Fresas", "Mechas", "Cuchillas", "Diamante", "Cabezales", "atencion"]
+
+        # --- FORMULARIO (arriba) ---
+        frame_form = tk.LabelFrame(vent, text="  Nueva corrección  ", bg="white",
+                                   font=("Arial", 11, "bold"), fg=COLOR_ROJO_WT, padx=12, pady=10)
+        frame_form.pack(fill="x", padx=12, pady=(12, 8))
+
+        fila1 = tk.Frame(frame_form, bg="white")
+        fila1.pack(fill="x", pady=(0, 6))
+        tk.Label(fila1, text="¿Para qué familia?", bg="white", font=("Arial", 10, "bold")).pack(side="left")
+        combo_ambito = ttk.Combobox(fila1, values=AMBITOS, state="readonly", width=18)
+        combo_ambito.set("global")
+        combo_ambito.pack(side="left", padx=(8, 0))
+        tk.Label(fila1, text="(global = vale para todas)", bg="white", fg="#888", font=("Arial", 9)).pack(side="left", padx=8)
+
+        tk.Label(frame_form, text="Situación (opcional, una nota para vos):", bg="white",
+                 font=("Arial", 10)).pack(anchor="w")
+        entry_situacion = tk.Entry(frame_form, font=("Arial", 11), relief="solid", bd=1)
+        entry_situacion.pack(fill="x", pady=(2, 8))
+
+        tk.Label(frame_form, text="Corrección: ¿qué debe hacer el bot?", bg="white",
+                 font=("Arial", 10, "bold")).pack(anchor="w")
+        txt_leccion = tk.Text(frame_form, font=("Arial", 11), height=4, wrap="word",
+                              relief="solid", bd=1, highlightbackground="#ccc", highlightthickness=1)
+        txt_leccion.pack(fill="x", pady=(2, 8))
+
+        btn_guardar = tk.Button(frame_form, text="💾 Guardar corrección", bg="#4CAF50", fg="white",
+                                font=("Arial", 11, "bold"), relief="flat", pady=8)
+        btn_guardar.pack(fill="x")
+
+        # --- LISTA (abajo) ---
+        frame_lista = tk.LabelFrame(vent, text="  Correcciones cargadas  ", bg="white",
+                                    font=("Arial", 11, "bold"), fg=COLOR_ROJO_WT, padx=12, pady=10)
+        frame_lista.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+        frame_bar = tk.Frame(frame_lista, bg="white")
+        frame_bar.pack(fill="x", pady=(0, 6))
+        btn_actualizar = tk.Button(frame_bar, text="🔄 Actualizar", bg="#2196F3", fg="white",
+                                   font=("Arial", 9, "bold"), relief="flat", padx=10)
+        btn_actualizar.pack(side="left")
+        btn_eliminar = tk.Button(frame_bar, text="🗑 Eliminar seleccionada", bg="#e74c3c", fg="white",
+                                 font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
+        btn_eliminar.pack(side="right")
+
+        tree = ttk.Treeview(frame_lista, columns=("ambito", "leccion"), show="headings", height=10)
+        tree.heading("ambito", text="Familia")
+        tree.heading("leccion", text="Corrección")
+        tree.column("ambito", width=110, anchor="w")
+        tree.column("leccion", width=560, anchor="w")
+        tree.pack(fill="both", expand=True)
+
+        def cargar_lista():
+            for i in tree.get_children():
+                tree.delete(i)
+            try:
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizajes", timeout=30)
+                if res.status_code != 200:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+                    return
+                for a in res.json():
+                    if not a.get("activo", True):
+                        continue
+                    tree.insert("", tk.END, iid=str(a["id"]),
+                                values=(a.get("ambito", ""), (a.get("leccion", "") or "")))
+            except Exception as e:
+                messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
+            btn_eliminar.config(state="disabled")
+
+        def guardar():
+            leccion = txt_leccion.get("1.0", tk.END).strip()
+            if len(leccion) < 5:
+                messagebox.showwarning("Falta la corrección", "Escribí qué debe hacer el bot.", parent=vent)
+                return
+            payload = {
+                "ambito": combo_ambito.get() or "global",
+                "situacion": entry_situacion.get().strip(),
+                "leccion": leccion,
+            }
+            btn_guardar.config(state="disabled", text="⏳ Guardando...")
+            vent.update()
+            try:
+                res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizaje", json=payload, timeout=30)
+                if res.status_code == 200:
+                    txt_leccion.delete("1.0", tk.END)
+                    entry_situacion.delete(0, tk.END)
+                    messagebox.showinfo("Listo", "Corrección guardada. El bot la aplica desde el próximo mensaje.", parent=vent)
+                    cargar_lista()
+                else:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
+            finally:
+                btn_guardar.config(state="normal", text="💾 Guardar corrección")
+
+        def on_select(evt):
+            btn_eliminar.config(state="normal" if tree.selection() else "disabled")
+
+        def eliminar():
+            sel = tree.selection()
+            if not sel:
+                return
+            if not messagebox.askyesno("Eliminar", "¿Borrar esta corrección?", parent=vent):
+                return
+            try:
+                requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizajes/{sel[0]}", timeout=30)
+                cargar_lista()
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo borrar.\n{e}", parent=vent)
+
+        btn_guardar.config(command=guardar)
+        btn_actualizar.config(command=cargar_lista)
+        btn_eliminar.config(command=eliminar)
+        tree.bind("<<TreeviewSelect>>", on_select)
+
+        cargar_lista()
+
     def abrir_chats_derivados(self):
         vent = tk.Toplevel(self.root)
         vent.title("Chats Pendientes / Requieren Atención")
