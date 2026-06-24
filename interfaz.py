@@ -318,13 +318,13 @@ class WoodToolsApp:
         entry_situacion = tk.Entry(frame_form, font=("Arial", 11), relief="solid", bd=1)
         entry_situacion.pack(fill="x", pady=(2, 8))
 
-        tk.Label(frame_form, text="Corrección: ¿qué debe hacer el bot?", bg="white",
+        tk.Label(frame_form, text="Decile con tus palabras qué debe hacer (el bot lo resume y aprende solo):", bg="white",
                  font=("Arial", 10, "bold")).pack(anchor="w")
         txt_leccion = tk.Text(frame_form, font=("Arial", 11), height=4, wrap="word",
                               relief="solid", bd=1, highlightbackground="#ccc", highlightthickness=1)
         txt_leccion.pack(fill="x", pady=(2, 8))
 
-        btn_guardar = tk.Button(frame_form, text="💾 Guardar corrección", bg="#4CAF50", fg="white",
+        btn_guardar = tk.Button(frame_form, text="🤖 Que el bot lo aprenda", bg="#4CAF50", fg="white",
                                 font=("Arial", 11, "bold"), relief="flat", pady=8)
         btn_guardar.pack(fill="x")
 
@@ -338,20 +338,31 @@ class WoodToolsApp:
         btn_actualizar = tk.Button(frame_bar, text="🔄 Actualizar", bg="#2196F3", fg="white",
                                    font=("Arial", 9, "bold"), relief="flat", padx=10)
         btn_actualizar.pack(side="left")
-        btn_eliminar = tk.Button(frame_bar, text="🗑 Eliminar seleccionada", bg="#e74c3c", fg="white",
+        tk.Label(frame_bar, text="🟡 = propuesta del bot (aprobala para que la use)", bg="white",
+                 fg="#888", font=("Arial", 9)).pack(side="left", padx=10)
+        btn_eliminar = tk.Button(frame_bar, text="🗑 Eliminar / Rechazar", bg="#e74c3c", fg="white",
                                  font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
         btn_eliminar.pack(side="right")
+        btn_aprobar = tk.Button(frame_bar, text="✅ Aprobar", bg="#4CAF50", fg="white",
+                                font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
+        btn_aprobar.pack(side="right", padx=(0, 6))
 
-        tree = ttk.Treeview(frame_lista, columns=("ambito", "leccion"), show="headings", height=10)
+        tree = ttk.Treeview(frame_lista, columns=("estado", "ambito", "leccion"), show="headings", height=10)
+        tree.heading("estado", text="Estado")
         tree.heading("ambito", text="Familia")
         tree.heading("leccion", text="Corrección")
-        tree.column("ambito", width=110, anchor="w")
-        tree.column("leccion", width=560, anchor="w")
+        tree.column("estado", width=90, anchor="w")
+        tree.column("ambito", width=100, anchor="w")
+        tree.column("leccion", width=510, anchor="w")
+        tree.tag_configure("pendiente", background="#fff7e0")
         tree.pack(fill="both", expand=True)
+
+        estados = {}
 
         def cargar_lista():
             for i in tree.get_children():
                 tree.delete(i)
+            estados.clear()
             try:
                 res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizajes", timeout=30)
                 if res.status_code != 200:
@@ -360,46 +371,68 @@ class WoodToolsApp:
                 for a in res.json():
                     if not a.get("activo", True):
                         continue
-                    tree.insert("", tk.END, iid=str(a["id"]),
-                                values=(a.get("ambito", ""), (a.get("leccion", "") or "")))
+                    est = a.get("estado", "aprobado")
+                    etiqueta = "🟡 pendiente" if est == "pendiente" else "✅ activa"
+                    tags = ("pendiente",) if est == "pendiente" else ()
+                    estados[str(a["id"])] = est
+                    tree.insert("", tk.END, iid=str(a["id"]), tags=tags,
+                                values=(etiqueta, a.get("ambito", ""), (a.get("leccion", "") or "")))
             except Exception as e:
                 messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
             btn_eliminar.config(state="disabled")
+            btn_aprobar.config(state="disabled")
 
         def guardar():
             leccion = txt_leccion.get("1.0", tk.END).strip()
             if len(leccion) < 5:
-                messagebox.showwarning("Falta la corrección", "Escribí qué debe hacer el bot.", parent=vent)
+                messagebox.showwarning("Falta la corrección", "Escribí con tus palabras qué debe hacer el bot.", parent=vent)
                 return
-            payload = {
-                "ambito": combo_ambito.get() or "global",
-                "situacion": entry_situacion.get().strip(),
-                "leccion": leccion,
-            }
-            btn_guardar.config(state="disabled", text="⏳ Guardando...")
+            nota = entry_situacion.get().strip()
+            texto = (nota + ". " + leccion) if nota else leccion
+            payload = {"ambito": combo_ambito.get() or "global", "texto": texto}
+            btn_guardar.config(state="disabled", text="⏳ El bot está aprendiendo...")
             vent.update()
             try:
-                res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizaje", json=payload, timeout=30)
+                res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprender", json=payload, timeout=45)
                 if res.status_code == 200:
-                    txt_leccion.delete("1.0", tk.END)
-                    entry_situacion.delete(0, tk.END)
-                    messagebox.showinfo("Listo", "Corrección guardada. El bot la aplica desde el próximo mensaje.", parent=vent)
-                    cargar_lista()
+                    data = res.json()
+                    if data.get("status") == "ok":
+                        txt_leccion.delete("1.0", tk.END)
+                        entry_situacion.delete(0, tk.END)
+                        messagebox.showinfo("Aprendido",
+                            f"El bot lo entendió como:\n\n«{data.get('leccion','')}»\n\nLo aplica desde el próximo mensaje.",
+                            parent=vent)
+                        cargar_lista()
+                    else:
+                        messagebox.showwarning("No se guardó", data.get("motivo", "No se pudo sacar una regla útil de eso."), parent=vent)
                 else:
                     messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
             except Exception as e:
                 messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
             finally:
-                btn_guardar.config(state="normal", text="💾 Guardar corrección")
+                btn_guardar.config(state="normal", text="🤖 Que el bot lo aprenda")
 
         def on_select(evt):
-            btn_eliminar.config(state="normal" if tree.selection() else "disabled")
+            sel = tree.selection()
+            hay = bool(sel)
+            btn_eliminar.config(state="normal" if hay else "disabled")
+            btn_aprobar.config(state="normal" if (hay and estados.get(sel[0]) == "pendiente") else "disabled")
+
+        def aprobar():
+            sel = tree.selection()
+            if not sel:
+                return
+            try:
+                requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizajes/{sel[0]}/aprobar", timeout=30)
+                cargar_lista()
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo aprobar.\n{e}", parent=vent)
 
         def eliminar():
             sel = tree.selection()
             if not sel:
                 return
-            if not messagebox.askyesno("Eliminar", "¿Borrar esta corrección?", parent=vent):
+            if not messagebox.askyesno("Eliminar", "¿Borrar/rechazar esta corrección?", parent=vent):
                 return
             try:
                 requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizajes/{sel[0]}", timeout=30)
@@ -410,6 +443,7 @@ class WoodToolsApp:
         btn_guardar.config(command=guardar)
         btn_actualizar.config(command=cargar_lista)
         btn_eliminar.config(command=eliminar)
+        btn_aprobar.config(command=aprobar)
         tree.bind("<<TreeviewSelect>>", on_select)
 
         cargar_lista()
@@ -456,6 +490,39 @@ class WoodToolsApp:
 
         btn_resuelto = tk.Button(frame_der, text="☑ Marcar como Resuelto (Contactado)", bg="#4CAF50", fg="white", font=("Arial", 11, "bold"), state="disabled", relief="flat", pady=8)
         btn_resuelto.pack(fill="x")
+
+        btn_aprender_chat = tk.Button(frame_der, text="🎓 Enseñarle al bot de este chat", bg="#6a1b9a", fg="white", font=("Arial", 10, "bold"), state="disabled", relief="flat", pady=6)
+        btn_aprender_chat.pack(fill="x", pady=(6, 0))
+
+        def aprender_de_chat_sel():
+            sel = lista_chats.curselection()
+            if not sel or not self.datos_chats_actuales:
+                return
+            idx = sel[0]
+            if idx not in self.lista_indices_map:
+                return
+            tel = self.datos_chats_actuales[self.lista_indices_map[idx]]['telefono']
+            nota = simpledialog.askstring("Enseñar al bot",
+                "¿Qué tendría que haber hecho distinto el bot en este chat?\n(opcional, ayuda a que aprenda mejor)",
+                parent=vent) or ""
+            btn_aprender_chat.config(state="disabled", text="⏳ El bot está analizando el chat...")
+            vent.update()
+            try:
+                res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprender_de_chat",
+                                    json={"telefono": tel, "nota": nota}, timeout=60)
+                data = res.json() if res.status_code == 200 else {}
+                if data.get("status") == "pendiente":
+                    messagebox.showinfo("Propuesta lista",
+                        f"El bot propone aprender:\n\n«{data.get('leccion','')}»\n\nQuedó PENDIENTE en Bot → Enseñar / Corregir al bot. Aprobala para que la use.",
+                        parent=vent)
+                else:
+                    messagebox.showwarning("Sin lección", data.get("motivo", "El bot no encontró algo útil/seguro para aprender de este chat."), parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo analizar el chat.\n{e}", parent=vent)
+            finally:
+                btn_aprender_chat.config(state="normal", text="🎓 Enseñarle al bot de este chat")
+
+        btn_aprender_chat.config(command=aprender_de_chat_sel)
 
         # --- Lógica de Pestañas y Listas ---
         self.datos_chats_actuales = []
@@ -571,6 +638,7 @@ class WoodToolsApp:
                 
             txt_chat.config(state="disabled")
             btn_resuelto.config(state="normal")
+            btn_aprender_chat.config(state="normal")
 
         lista_chats.bind("<<ListboxSelect>>", mostrar_chat)
 
