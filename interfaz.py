@@ -295,7 +295,7 @@ class WoodToolsApp:
         del servidor: las correcciones se aplican en el próximo mensaje, sin redeploy."""
         vent = tk.Toplevel(self.root)
         vent.title("Enseñar / Corregir al Bot")
-        vent.geometry("820x680")
+        vent.geometry("880x820")
         vent.configure(bg="white")
 
         AMBITOS = ["global", "Sierras", "Fresas", "Mechas", "Cuchillas", "Diamante", "Cabezales", "atencion"]
@@ -355,14 +355,39 @@ class WoodToolsApp:
         tree.column("ambito", width=100, anchor="w")
         tree.column("leccion", width=510, anchor="w")
         tree.tag_configure("pendiente", background="#fff7e0")
+
+        # --- Panel para VER COMPLETA y EDITAR la corrección seleccionada ---
+        detalle = tk.LabelFrame(frame_lista, text="  Ver / Editar la corrección seleccionada  ",
+                                bg="white", font=("Arial", 10, "bold"), fg=COLOR_ROJO_WT, padx=10, pady=8)
+        detalle.pack(side="bottom", fill="x", pady=(8, 0))
+        fila_det = tk.Frame(detalle, bg="white")
+        fila_det.pack(fill="x", pady=(0, 4))
+        tk.Label(fila_det, text="Familia:", bg="white", font=("Arial", 9, "bold")).pack(side="left")
+        combo_det = ttk.Combobox(fila_det, values=AMBITOS, state="readonly", width=14)
+        combo_det.pack(side="left", padx=(6, 0))
+        btn_guardar_edit = tk.Button(fila_det, text="💾 Guardar cambios", bg="#2196F3", fg="white",
+                                     font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
+        btn_guardar_edit.pack(side="right")
+        txt_detalle = tk.Text(detalle, font=("Arial", 11), height=4, wrap="word", relief="solid", bd=1,
+                              highlightbackground="#ccc", highlightthickness=1, state="disabled")
+        txt_detalle.pack(fill="x")
+
         tree.pack(fill="both", expand=True)
 
         estados = {}
+        datos = {}
+
+        def limpiar_detalle():
+            txt_detalle.config(state="normal")
+            txt_detalle.delete("1.0", tk.END)
+            txt_detalle.config(state="disabled")
+            btn_guardar_edit.config(state="disabled")
 
         def cargar_lista():
             for i in tree.get_children():
                 tree.delete(i)
             estados.clear()
+            datos.clear()
             try:
                 res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizajes", timeout=30)
                 if res.status_code != 200:
@@ -375,12 +400,14 @@ class WoodToolsApp:
                     etiqueta = "🟡 pendiente" if est == "pendiente" else "✅ activa"
                     tags = ("pendiente",) if est == "pendiente" else ()
                     estados[str(a["id"])] = est
+                    datos[str(a["id"])] = a
                     tree.insert("", tk.END, iid=str(a["id"]), tags=tags,
                                 values=(etiqueta, a.get("ambito", ""), (a.get("leccion", "") or "")))
             except Exception as e:
                 messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
             btn_eliminar.config(state="disabled")
             btn_aprobar.config(state="disabled")
+            limpiar_detalle()
 
         def guardar():
             leccion = txt_leccion.get("1.0", tk.END).strip()
@@ -417,6 +444,38 @@ class WoodToolsApp:
             hay = bool(sel)
             btn_eliminar.config(state="normal" if hay else "disabled")
             btn_aprobar.config(state="normal" if (hay and estados.get(sel[0]) == "pendiente") else "disabled")
+            if hay:
+                a = datos.get(sel[0], {})
+                txt_detalle.config(state="normal")
+                txt_detalle.delete("1.0", tk.END)
+                txt_detalle.insert("1.0", a.get("leccion", "") or "")
+                combo_det.set(a.get("ambito", "global") or "global")
+                btn_guardar_edit.config(state="normal")
+            else:
+                limpiar_detalle()
+
+        def guardar_edit():
+            sel = tree.selection()
+            if not sel:
+                return
+            nuevo = txt_detalle.get("1.0", tk.END).strip()
+            if len(nuevo) < 3:
+                messagebox.showwarning("Texto vacío", "La corrección no puede quedar vacía.", parent=vent)
+                return
+            payload = {"leccion": nuevo, "ambito": combo_det.get() or ""}
+            btn_guardar_edit.config(state="disabled", text="⏳ Guardando...")
+            vent.update()
+            try:
+                res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/aprendizajes/{sel[0]}/editar", json=payload, timeout=30)
+                if res.status_code == 200:
+                    messagebox.showinfo("Guardado", "Corrección actualizada. El bot la usa así desde el próximo mensaje.", parent=vent)
+                    cargar_lista()
+                else:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error de Conexión", f"No se pudo guardar.\n{e}", parent=vent)
+            finally:
+                btn_guardar_edit.config(state="normal", text="💾 Guardar cambios")
 
         def aprobar():
             sel = tree.selection()
@@ -444,6 +503,7 @@ class WoodToolsApp:
         btn_actualizar.config(command=cargar_lista)
         btn_eliminar.config(command=eliminar)
         btn_aprobar.config(command=aprobar)
+        btn_guardar_edit.config(command=guardar_edit)
         tree.bind("<<TreeviewSelect>>", on_select)
 
         cargar_lista()
