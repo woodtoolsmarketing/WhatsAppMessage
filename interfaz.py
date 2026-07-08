@@ -48,6 +48,7 @@ class WoodToolsApp:
         menu_bot = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Bot", menu=menu_bot)
         menu_bot.add_command(label="Enseñar / Corregir al bot", command=self.abrir_correcciones_bot)
+        menu_bot.add_command(label="Cortes de fresas (visión)", command=self.abrir_cortes_fresas)
         
         try:
             myappid = 'woodtools.gestormarketing.12.0'
@@ -290,6 +291,176 @@ class WoodToolsApp:
     # ==========================================
     # PANTALLA DE CHATS PENDIENTES / ABANDONADOS
     # ==========================================
+    def abrir_cortes_fresas(self):
+        """Ventana para editar la guía de cortes de fresas (visión del bot). Usa los
+        endpoints /fresas_cortes: el bot los aplica en la próxima foto, sin redeploy."""
+        vent = tk.Toplevel(self.root)
+        vent.title("Cortes de Fresas (guía de visión)")
+        vent.geometry("900x820")
+        vent.configure(bg="white")
+
+        GRUPOS = ["canales", "moldura", "machimbre", "finger", "cepillado"]
+
+        frame_form = tk.LabelFrame(vent, text="  Nuevo corte  ", bg="white",
+                                   font=("Arial", 11, "bold"), fg=COLOR_ROJO_WT, padx=12, pady=10)
+        frame_form.pack(fill="x", padx=12, pady=(12, 8))
+        fila1 = tk.Frame(frame_form, bg="white")
+        fila1.pack(fill="x", pady=(0, 6))
+        tk.Label(fila1, text="Nombre de la fresa:", bg="white", font=("Arial", 10, "bold")).pack(side="left")
+        entry_nombre = tk.Entry(fila1, font=("Arial", 11), relief="solid", bd=1, width=30)
+        entry_nombre.pack(side="left", padx=(8, 12))
+        tk.Label(fila1, text="Grupo:", bg="white", font=("Arial", 10, "bold")).pack(side="left")
+        combo_grupo = ttk.Combobox(fila1, values=GRUPOS, state="readonly", width=13)
+        combo_grupo.pack(side="left", padx=(6, 0))
+        tk.Label(frame_form, text="¿Cómo se ve el corte? (para que el bot lo reconozca en la foto):", bg="white",
+                 font=("Arial", 10, "bold")).pack(anchor="w")
+        txt_desc = tk.Text(frame_form, font=("Arial", 11), height=3, wrap="word",
+                           relief="solid", bd=1, highlightbackground="#ccc", highlightthickness=1)
+        txt_desc.pack(fill="x", pady=(2, 8))
+        tk.Label(frame_form, text="Palabras clave (sinónimos del cliente, separadas por coma):", bg="white",
+                 font=("Arial", 10)).pack(anchor="w")
+        entry_claves = tk.Entry(frame_form, font=("Arial", 11), relief="solid", bd=1)
+        entry_claves.pack(fill="x", pady=(2, 8))
+        btn_agregar = tk.Button(frame_form, text="➕ Agregar corte", bg="#4CAF50", fg="white",
+                                font=("Arial", 11, "bold"), relief="flat", pady=8)
+        btn_agregar.pack(fill="x")
+
+        frame_lista = tk.LabelFrame(vent, text="  Cortes cargados  ", bg="white",
+                                    font=("Arial", 11, "bold"), fg=COLOR_ROJO_WT, padx=12, pady=10)
+        frame_lista.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        frame_bar = tk.Frame(frame_lista, bg="white")
+        frame_bar.pack(fill="x", pady=(0, 6))
+        btn_actualizar = tk.Button(frame_bar, text="🔄 Actualizar", bg="#2196F3", fg="white",
+                                   font=("Arial", 9, "bold"), relief="flat", padx=10)
+        btn_actualizar.pack(side="left")
+        btn_eliminar = tk.Button(frame_bar, text="🗑 Eliminar", bg="#e74c3c", fg="white",
+                                 font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
+        btn_eliminar.pack(side="right")
+
+        detalle = tk.LabelFrame(frame_lista, text="  Ver / Editar el corte seleccionado  ",
+                                bg="white", font=("Arial", 10, "bold"), fg=COLOR_ROJO_WT, padx=10, pady=8)
+        detalle.pack(side="bottom", fill="x", pady=(8, 0))
+        filad = tk.Frame(detalle, bg="white")
+        filad.pack(fill="x", pady=(0, 4))
+        tk.Label(filad, text="Grupo:", bg="white", font=("Arial", 9, "bold")).pack(side="left")
+        combo_det = ttk.Combobox(filad, values=GRUPOS, state="readonly", width=12)
+        combo_det.pack(side="left", padx=(6, 12))
+        tk.Label(filad, text="Palabras clave:", bg="white", font=("Arial", 9, "bold")).pack(side="left")
+        entry_claves_det = tk.Entry(filad, font=("Arial", 10), relief="solid", bd=1)
+        entry_claves_det.pack(side="left", fill="x", expand=True, padx=(6, 12))
+        btn_guardar_edit = tk.Button(filad, text="💾 Guardar", bg="#2196F3", fg="white",
+                                     font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
+        btn_guardar_edit.pack(side="right")
+        txt_det = tk.Text(detalle, font=("Arial", 11), height=3, wrap="word", relief="solid", bd=1,
+                          highlightbackground="#ccc", highlightthickness=1, state="disabled")
+        txt_det.pack(fill="x")
+
+        tree = ttk.Treeview(frame_lista, columns=("nombre", "grupo", "desc"), show="headings", height=9)
+        tree.heading("nombre", text="Fresa")
+        tree.heading("grupo", text="Grupo")
+        tree.heading("desc", text="Descripción del corte")
+        tree.column("nombre", width=190, anchor="w")
+        tree.column("grupo", width=90, anchor="w")
+        tree.column("desc", width=420, anchor="w")
+        tree.pack(fill="both", expand=True)
+
+        datos = {}
+
+        def limpiar_det():
+            txt_det.config(state="normal"); txt_det.delete("1.0", tk.END); txt_det.config(state="disabled")
+            entry_claves_det.delete(0, tk.END)
+            btn_guardar_edit.config(state="disabled")
+
+        def cargar():
+            for i in tree.get_children():
+                tree.delete(i)
+            datos.clear()
+            try:
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/fresas_cortes", timeout=30)
+                if res.status_code != 200:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+                    return
+                for c in res.json():
+                    if not c.get("activo", True):
+                        continue
+                    datos[str(c["id"])] = c
+                    tree.insert("", tk.END, iid=str(c["id"]),
+                                values=(c.get("nombre", ""), c.get("grupo", "") or "", c.get("descripcion_corte", "") or ""))
+            except Exception as e:
+                messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
+            btn_eliminar.config(state="disabled")
+            limpiar_det()
+
+        def agregar():
+            nombre = entry_nombre.get().strip()
+            desc = txt_desc.get("1.0", tk.END).strip()
+            if len(nombre) < 2 or len(desc) < 5:
+                messagebox.showwarning("Faltan datos", "Poné el nombre de la fresa y cómo se ve el corte.", parent=vent)
+                return
+            payload = {"nombre": nombre, "grupo": combo_grupo.get(),
+                       "descripcion_corte": desc, "palabras_clave": entry_claves.get().strip()}
+            try:
+                res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/fresas_corte", json=payload, timeout=30)
+                if res.status_code == 200:
+                    entry_nombre.delete(0, tk.END); txt_desc.delete("1.0", tk.END)
+                    entry_claves.delete(0, tk.END); combo_grupo.set("")
+                    cargar()
+                else:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error de Conexión", f"No se pudo guardar.\n{e}", parent=vent)
+
+        def on_select(evt):
+            sel = tree.selection()
+            if not sel:
+                btn_eliminar.config(state="disabled"); limpiar_det(); return
+            btn_eliminar.config(state="normal")
+            c = datos.get(sel[0], {})
+            txt_det.config(state="normal"); txt_det.delete("1.0", tk.END)
+            txt_det.insert("1.0", c.get("descripcion_corte", "") or "")
+            combo_det.set(c.get("grupo", "") or "")
+            entry_claves_det.delete(0, tk.END); entry_claves_det.insert(0, c.get("palabras_clave", "") or "")
+            btn_guardar_edit.config(state="normal")
+
+        def guardar_edit():
+            sel = tree.selection()
+            if not sel:
+                return
+            desc = txt_det.get("1.0", tk.END).strip()
+            if len(desc) < 5:
+                messagebox.showwarning("Vacío", "La descripción no puede quedar vacía.", parent=vent)
+                return
+            payload = {"descripcion_corte": desc, "grupo": combo_det.get(), "palabras_clave": entry_claves_det.get().strip()}
+            try:
+                res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/fresas_cortes/{sel[0]}/editar", json=payload, timeout=30)
+                if res.status_code == 200:
+                    messagebox.showinfo("Guardado", "Corte actualizado. El bot lo usa en la próxima foto.", parent=vent)
+                    cargar()
+                else:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error de Conexión", f"No se pudo guardar.\n{e}", parent=vent)
+
+        def eliminar():
+            sel = tree.selection()
+            if not sel:
+                return
+            if not messagebox.askyesno("Eliminar", "¿Borrar este corte de la guía?", parent=vent):
+                return
+            try:
+                requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/fresas_cortes/{sel[0]}", timeout=30)
+                cargar()
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo borrar.\n{e}", parent=vent)
+
+        btn_agregar.config(command=agregar)
+        btn_actualizar.config(command=cargar)
+        btn_eliminar.config(command=eliminar)
+        btn_guardar_edit.config(command=guardar_edit)
+        tree.bind("<<TreeviewSelect>>", on_select)
+
+        cargar()
+
     def abrir_correcciones_bot(self):
         """Ventana para enseñarle/corregir al bot. Usa los endpoints /aprendizaje(s)
         del servidor: las correcciones se aplican en el próximo mensaje, sin redeploy."""
