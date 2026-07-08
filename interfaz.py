@@ -333,6 +333,9 @@ class WoodToolsApp:
         btn_actualizar = tk.Button(frame_bar, text="🔄 Actualizar", bg="#2196F3", fg="white",
                                    font=("Arial", 9, "bold"), relief="flat", padx=10)
         btn_actualizar.pack(side="left")
+        btn_probar = tk.Button(frame_bar, text="🔍 Probar con una foto", bg="#6a1b9a", fg="white",
+                               font=("Arial", 9, "bold"), relief="flat", padx=10)
+        btn_probar.pack(side="left", padx=(8, 0))
         btn_eliminar = tk.Button(frame_bar, text="🗑 Eliminar", bg="#e74c3c", fg="white",
                                  font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
         btn_eliminar.pack(side="right")
@@ -453,8 +456,31 @@ class WoodToolsApp:
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo borrar.\n{e}", parent=vent)
 
+        def probar_foto():
+            ruta = filedialog.askopenfilename(
+                title="Elegí una foto del corte",
+                filetypes=[("Imágenes", "*.jpg *.jpeg *.png *.webp *.bmp"), ("Todos", "*.*")],
+                parent=vent)
+            if not ruta:
+                return
+            btn_probar.config(state="disabled", text="⏳ Analizando...")
+            vent.update()
+            try:
+                with open(ruta, "rb") as fh:
+                    res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/identificar_corte",
+                                        files={"foto": fh}, timeout=90)
+                if res.status_code == 200:
+                    messagebox.showinfo("El bot identificó", res.json().get("resultado", "(sin respuesta)"), parent=vent)
+                else:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo analizar la foto.\n{e}", parent=vent)
+            finally:
+                btn_probar.config(state="normal", text="🔍 Probar con una foto")
+
         btn_agregar.config(command=agregar)
         btn_actualizar.config(command=cargar)
+        btn_probar.config(command=probar_foto)
         btn_eliminar.config(command=eliminar)
         btn_guardar_edit.config(command=guardar_edit)
         tree.bind("<<TreeviewSelect>>", on_select)
