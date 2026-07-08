@@ -11,6 +11,7 @@ import urllib.parse
 import requests
 import json
 import re
+import io
 from datetime import datetime, timedelta
 
 import mainCode
@@ -351,12 +352,20 @@ class WoodToolsApp:
         tk.Label(filad, text="Palabras clave:", bg="white", font=("Arial", 9, "bold")).pack(side="left")
         entry_claves_det = tk.Entry(filad, font=("Arial", 10), relief="solid", bd=1)
         entry_claves_det.pack(side="left", fill="x", expand=True, padx=(6, 12))
+        btn_foto = tk.Button(filad, text="📷 Foto...", bg="#795548", fg="white",
+                             font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
+        btn_foto.pack(side="right", padx=(0, 6))
         btn_guardar_edit = tk.Button(filad, text="💾 Guardar", bg="#2196F3", fg="white",
                                      font=("Arial", 9, "bold"), relief="flat", padx=10, state="disabled")
-        btn_guardar_edit.pack(side="right")
-        txt_det = tk.Text(detalle, font=("Arial", 11), height=3, wrap="word", relief="solid", bd=1,
+        btn_guardar_edit.pack(side="right", padx=(0, 6))
+        zona_det = tk.Frame(detalle, bg="white")
+        zona_det.pack(fill="x")
+        txt_det = tk.Text(zona_det, font=("Arial", 11), height=4, wrap="word", relief="solid", bd=1,
                           highlightbackground="#ccc", highlightthickness=1, state="disabled")
-        txt_det.pack(fill="x")
+        txt_det.pack(side="left", fill="x", expand=True)
+        lbl_foto = tk.Label(zona_det, bg="#f0f0f0", text="sin foto", fg="#999",
+                            width=20, height=8, relief="solid", bd=1)
+        lbl_foto.pack(side="right", padx=(10, 0))
 
         tree = ttk.Treeview(frame_lista, columns=("nombre", "grupo", "desc"), show="headings", height=9)
         tree.heading("nombre", text="Fresa")
@@ -373,6 +382,8 @@ class WoodToolsApp:
             txt_det.config(state="normal"); txt_det.delete("1.0", tk.END); txt_det.config(state="disabled")
             entry_claves_det.delete(0, tk.END)
             btn_guardar_edit.config(state="disabled")
+            btn_foto.config(state="disabled")
+            lbl_foto.config(image="", text="sin foto"); lbl_foto.image = None
 
         def cargar():
             for i in tree.get_children():
@@ -387,8 +398,9 @@ class WoodToolsApp:
                     if not c.get("activo", True):
                         continue
                     datos[str(c["id"])] = c
+                    nombre_disp = ("📷 " if c.get("tiene_imagen") else "") + (c.get("nombre", "") or "")
                     tree.insert("", tk.END, iid=str(c["id"]),
-                                values=(c.get("nombre", ""), c.get("grupo", "") or "", c.get("descripcion_corte", "") or ""))
+                                values=(nombre_disp, c.get("grupo", "") or "", c.get("descripcion_corte", "") or ""))
             except Exception as e:
                 messagebox.showerror("Error de Conexión", f"No se pudo conectar con el servidor.\n{e}", parent=vent)
             btn_eliminar.config(state="disabled")
@@ -424,6 +436,45 @@ class WoodToolsApp:
             combo_det.set(c.get("grupo", "") or "")
             entry_claves_det.delete(0, tk.END); entry_claves_det.insert(0, c.get("palabras_clave", "") or "")
             btn_guardar_edit.config(state="normal")
+            btn_foto.config(state="normal")
+            mostrar_foto(sel[0])
+
+        def mostrar_foto(cid):
+            try:
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/fresas_cortes/{cid}/imagen", timeout=30)
+                if res.status_code == 200:
+                    img = Image.open(io.BytesIO(res.content)); img.thumbnail((150, 120))
+                    ph = ImageTk.PhotoImage(img)
+                    lbl_foto.config(image=ph, text=""); lbl_foto.image = ph
+                    return
+            except Exception:
+                pass
+            lbl_foto.config(image="", text="sin foto"); lbl_foto.image = None
+
+        def subir_foto_corte():
+            sel = tree.selection()
+            if not sel:
+                return
+            ruta = filedialog.askopenfilename(
+                title="Foto de referencia del corte",
+                filetypes=[("Imágenes", "*.jpg *.jpeg *.png *.webp *.bmp"), ("Todos", "*.*")], parent=vent)
+            if not ruta:
+                return
+            try:
+                with open(ruta, "rb") as fh:
+                    res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/fresas_cortes/{sel[0]}/imagen",
+                                        files={"foto": fh}, timeout=60)
+                if res.status_code == 200:
+                    cid = sel[0]
+                    cargar()
+                    try:
+                        tree.selection_set(cid); tree.see(cid)
+                    except Exception:
+                        pass
+                else:
+                    messagebox.showerror("Error", f"El servidor respondió con código {res.status_code}.", parent=vent)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo subir la foto.\n{e}", parent=vent)
 
         def guardar_edit():
             sel = tree.selection()
@@ -483,6 +534,7 @@ class WoodToolsApp:
         btn_probar.config(command=probar_foto)
         btn_eliminar.config(command=eliminar)
         btn_guardar_edit.config(command=guardar_edit)
+        btn_foto.config(command=subir_foto_corte)
         tree.bind("<<TreeviewSelect>>", on_select)
 
         cargar()
