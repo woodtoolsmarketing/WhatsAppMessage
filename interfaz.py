@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, simpledialog, filedialog
 from PIL import Image, ImageTk
 import pandas as pd
 import threading
+import subprocess
 import os
 import sys
 import time
@@ -30,7 +31,7 @@ def obtener_ruta_interna(ruta_relativa):
 class WoodToolsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gestor de Marketing WhatsApp v12.0 - CRM")
+        self.root.title(f"Gestor de Marketing WhatsApp v{mainCode.VERSION_APP} - CRM")
         self.root.geometry("1500x900")
         self.root.state('zoomed')
         self.root.configure(bg=COLOR_ROJO_WT)
@@ -50,7 +51,16 @@ class WoodToolsApp:
         menubar.add_cascade(label="Bot", menu=menu_bot)
         menu_bot.add_command(label="Enseñar / Corregir al bot", command=self.abrir_correcciones_bot)
         menu_bot.add_command(label="Cortes de fresas (visión)", command=self.abrir_cortes_fresas)
-        
+
+        menu_servidor = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Servidor", menu=menu_servidor)
+        menu_servidor.add_command(label="Ver qué dice el servidor", command=self.abrir_monitor_servidor)
+
+        menu_ayuda = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Ayuda", menu=menu_ayuda)
+        menu_ayuda.add_command(label="Buscar actualizaciones", command=lambda: self.verificar_actualizaciones(manual=True))
+        menu_ayuda.add_command(label=f"Versión {mainCode.VERSION_APP}", state="disabled")
+
         try:
             myappid = 'woodtools.gestormarketing.12.0'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -126,7 +136,9 @@ class WoodToolsApp:
         self.lbl_conteo.grid(row=0, column=7, padx=20)
 
         frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
-        frame_campana.pack(fill="x", padx=20, pady=2)
+        # OJO: este bloque se empaqueta más abajo (después del Panel de Control y de Gestión
+        # de Teléfonos) para que, al maximizar en pantallas chicas, esos paneles inferiores
+        # tengan prioridad de espacio y el botón ENVIAR nunca quede fuera de pantalla.
 
         tk.Label(frame_campana, text="Tipo Mensaje:", bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
         self.tipo_mensaje_var = tk.StringVar(value="Promociones")
@@ -165,8 +177,13 @@ class WoodToolsApp:
         self.frame_preview = tk.LabelFrame(frame_campana, text="Vista Previa", bg=COLOR_PANELES, fg="#555", font=("Segoe UI", 9, "bold"))
         self.frame_preview.grid(row=0, column=3, rowspan=2, padx=10, sticky="nsew")
         
-        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=9, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=5, pady=5, fg="#333")
+        self.lbl_preview_text = tk.Label(self.frame_preview, text="", bg="#e8ecef", width=55, height=6, justify="left", anchor="nw", wraplength=400, font=("Arial", 10, "italic"), relief="sunken", bd=1, padx=5, pady=5, fg="#333")
         self.lbl_preview_text.pack(padx=5, pady=2, fill="both", expand=True)
+
+        # La columna de la Vista Previa se estira para ocupar todo el ancho libre a la derecha
+        # (así no queda el hueco vacío al maximizar). Su texto ajusta el "wrap" al ancho real.
+        frame_campana.columnconfigure(3, weight=1)
+        self.frame_preview.bind("<Configure>", lambda e: self.lbl_preview_text.config(wraplength=max(300, e.width - 30)))
 
         self.entry_dinamico_texto.bind("<KeyRelease>", self.actualizar_preview)
         self.text_dinamico_multilinea.bind("<KeyRelease>", self.actualizar_preview)
@@ -194,14 +211,20 @@ class WoodToolsApp:
         self.frame_telefonos.pack(fill="x", padx=20, pady=2, side="bottom")
         self._limpiar_panel_telefonos()
 
+        # Configuración de Envío: va arriba de la tabla (side="top"), pero se empaqueta AHORA,
+        # después de los paneles inferiores, para que estos reserven su espacio primero.
+        frame_campana.pack(fill="x", padx=20, pady=2)
+
         frame_tabla = tk.Frame(root, bg=COLOR_ROJO_WT)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=2)
         self.tree = ttk.Treeview(frame_tabla, columns=("Cli", "Tel", "Vend", "Zona", "Est"), show="headings")
-        self.tree.heading("Cli", text="Cliente"); self.tree.column("Cli", width=200)
-        self.tree.heading("Tel", text="Se enviará a:"); self.tree.column("Tel", width=250)
-        self.tree.heading("Vend", text="Vendedor"); self.tree.column("Vend", width=100)
-        self.tree.heading("Zona", text="Zona"); self.tree.column("Zona", width=120)
-        self.tree.heading("Est", text="Estado"); self.tree.column("Est", width=120)
+        # Las columnas de texto (Cliente, Se enviará a, Zona) se estiran para llenar todo el
+        # ancho de la ventana; Vendedor y Estado quedan fijas y angostas. Así no queda hueco a la derecha.
+        self.tree.heading("Cli", text="Cliente"); self.tree.column("Cli", width=220, minwidth=160, stretch=True)
+        self.tree.heading("Tel", text="Se enviará a:"); self.tree.column("Tel", width=300, minwidth=220, stretch=True)
+        self.tree.heading("Vend", text="Vendedor"); self.tree.column("Vend", width=90, minwidth=70, anchor="center", stretch=False)
+        self.tree.heading("Zona", text="Zona"); self.tree.column("Zona", width=260, minwidth=160, stretch=True)
+        self.tree.heading("Est", text="Estado"); self.tree.column("Est", width=90, minwidth=70, anchor="center", stretch=False)
         self.tree.tag_configure('valido', background='white'); self.tree.tag_configure('invalido', background='#FFCCCC', foreground='red')
         self.tree.bind("<<TreeviewSelect>>", self.al_seleccionar_cliente)
         
@@ -209,6 +232,10 @@ class WoodToolsApp:
         self.tree.configure(yscroll=scroll.set); scroll.pack(side="right", fill="y"); self.tree.pack(fill="both", expand=True)
 
         self.actualizar_estado_bot_loop()
+
+        # Chequeo de actualizaciones al iniciar (solo en el .exe instalado, no en desarrollo)
+        if getattr(sys, 'frozen', False):
+            self.root.after(3000, lambda: threading.Thread(target=self._chequeo_inicial_actualizacion, daemon=True).start())
 
     def cargar_logo_con_ovalo(self, parent):
         ruta_1 = obtener_ruta_interna(r"Imagenes\logo.png")
@@ -229,6 +256,83 @@ class WoodToolsApp:
                 canvas.create_oval(2, 2, ovalo_w-2, ovalo_h-2, fill=COLOR_PANELES, outline=COLOR_PANELES)
                 canvas.create_image(ovalo_w/2, ovalo_h/2, image=self.logo_img)
             except Exception as e: print(f"Error cargando logo: {e}")
+
+    # ==========================================
+    # AUTO-ACTUALIZACIÓN
+    # ==========================================
+    def _chequeo_inicial_actualizacion(self):
+        """Se ejecuta en segundo plano al abrir. Si hay versión nueva, la ofrece."""
+        info = mainCode.obtener_actualizacion_disponible()
+        if info:
+            self.root.after(0, lambda: self._ofrecer_actualizacion(info))
+
+    def verificar_actualizaciones(self, manual=False):
+        """Busca actualizaciones. Si manual=True, avisa aunque ya esté al día."""
+        def tarea():
+            info = mainCode.obtener_actualizacion_disponible()
+            if info:
+                self.root.after(0, lambda: self._ofrecer_actualizacion(info))
+            elif manual:
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Actualizaciones",
+                    f"Ya tenés la última versión instalada (v{mainCode.VERSION_APP})."))
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _ofrecer_actualizacion(self, info):
+        notas = (info.get("notas") or "").strip()
+        if len(notas) > 300:
+            notas = notas[:300] + "..."
+        txt = f"Hay una versión nueva disponible: v{info['version']}\n(Tenés la v{mainCode.VERSION_APP})"
+        if notas:
+            txt += f"\n\nNovedades:\n{notas}"
+        txt += "\n\n¿Querés descargarla e instalarla ahora?\nLa app se cerrará unos segundos y se volverá a abrir sola."
+        if messagebox.askyesno("Actualización disponible", txt):
+            self._descargar_e_instalar(info)
+
+    def _descargar_e_instalar(self, info):
+        vent = tk.Toplevel(self.root)
+        vent.title("Descargando actualización")
+        vent.geometry("430x130")
+        vent.configure(bg="white")
+        vent.transient(self.root)
+        vent.resizable(False, False)
+        tk.Label(vent, text=f"Descargando la versión v{info['version']}...", bg="white",
+                 font=("Segoe UI", 10, "bold")).pack(pady=(18, 8))
+        barra = ttk.Progressbar(vent, orient="horizontal", length=370, mode="determinate")
+        barra.pack(pady=5)
+        lbl = tk.Label(vent, text="0 %", bg="white", fg="#555")
+        lbl.pack()
+
+        def progreso(bajado, total):
+            if total:
+                pct = int(bajado * 100 / total)
+                self.root.after(0, lambda: (barra.config(value=pct),
+                    lbl.config(text=f"{pct} %   ({bajado // 1048576} / {total // 1048576} MB)")))
+
+        def tarea():
+            ruta = mainCode.descargar_instalador(info["url"], progreso)
+            self.root.after(0, lambda: self._finalizar_actualizacion(vent, ruta))
+
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _finalizar_actualizacion(self, vent, ruta_setup):
+        try: vent.destroy()
+        except Exception: pass
+        if not ruta_setup or not os.path.exists(ruta_setup):
+            messagebox.showerror("Actualización",
+                                 "No se pudo descargar la actualización. Probá de nuevo más tarde.")
+            return
+        try:
+            ruta_app = sys.executable  # el .exe actual (misma ruta a la que reinstala el setup)
+            # Espera ~3s a que la app cierre, instala en silencio y vuelve a abrir la app.
+            cmd = (f'ping 127.0.0.1 -n 4 >nul & "{ruta_setup}" /VERYSILENT /SUPPRESSMSGBOXES '
+                   f'/NORESTART & start "" "{ruta_app}"')
+            subprocess.Popen(cmd, shell=True, creationflags=0x00000008)  # DETACHED_PROCESS
+            self.root.destroy()
+            os._exit(0)
+        except Exception as e:
+            mainCode.log_error(f"Error lanzando el instalador: {e}")
+            messagebox.showerror("Actualización", f"No se pudo iniciar la instalación:\n{e}")
 
     # ==========================================
     # LÓGICA VISUAL DEL BOT
@@ -756,6 +860,191 @@ class WoodToolsApp:
         tree.bind("<<TreeviewSelect>>", on_select)
 
         cargar_lista()
+
+    # ==========================================
+    # MONITOR DEL SERVIDOR (qué dice el servidor)
+    # ==========================================
+    def _text_con_scroll(self, parent, **kw):
+        """Devuelve (contenedor, Text) con barra de desplazamiento vertical."""
+        cont = tk.Frame(parent, bg="white")
+        sb = ttk.Scrollbar(cont, orient="vertical")
+        txt = tk.Text(cont, yscrollcommand=sb.set, **kw)
+        sb.config(command=txt.yview)
+        sb.pack(side="right", fill="y")
+        txt.pack(side="left", fill="both", expand=True)
+        return cont, txt
+
+    def abrir_monitor_servidor(self):
+        """Ventana con lo que dice el servidor: Monitor (estado en vivo),
+        Conversaciones (/derivados) y JSON crudo de cada endpoint."""
+        vent = tk.Toplevel(self.root)
+        vent.title("Servidor — ¿Qué dice el servidor?")
+        vent.geometry("1060x720")
+        vent.configure(bg="white")
+
+        nb = ttk.Notebook(vent)
+        nb.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # ---------- PESTAÑA 1: MONITOR ----------
+        tab_mon = tk.Frame(nb, bg="white"); nb.add(tab_mon, text="  📊 Monitor  ")
+        top_mon = tk.Frame(tab_mon, bg="white"); top_mon.pack(fill="x", pady=(8, 4), padx=10)
+        tk.Label(top_mon, text="Estado del servidor en vivo", bg="white",
+                 font=("Segoe UI", 13, "bold")).pack(side="left")
+        btn_ref_mon = tk.Button(top_mon, text="🔄 Actualizar", bg="#2196F3", fg="white",
+                                font=("Segoe UI", 9, "bold"), relief="flat", padx=10)
+        btn_ref_mon.pack(side="right")
+        cont_mon, txt_mon = self._text_con_scroll(tab_mon, font=("Consolas", 11), wrap="word",
+                                                  state="disabled", relief="flat",
+                                                  highlightbackground="#ccc", highlightthickness=1, bg="#fbfbfb")
+        cont_mon.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        def cargar_monitor():
+            btn_ref_mon.config(state="disabled", text="⏳ Consultando...")
+            def tarea():
+                online = mainCode.consultar_servidor("/", timeout=40)
+                estado = mainCode.consultar_servidor("/estado_bot")
+                metricas = mainCode.consultar_servidor("/metricas")
+                derivados = mainCode.consultar_servidor("/derivados")
+                aprend = mainCode.consultar_servidor("/aprendizajes")
+                self.root.after(0, lambda: pintar_monitor(online, estado, metricas, derivados, aprend))
+            threading.Thread(target=tarea, daemon=True).start()
+
+        def pintar_monitor(online, estado, metricas, derivados, aprend):
+            L = []
+            L.append("🟢 SERVIDOR EN LÍNEA" if online["ok"] else f"🔴 SERVIDOR SIN CONEXIÓN (código {online['status']})")
+            L.append("")
+            if estado["ok"] and isinstance(estado["json"], dict):
+                L.append(f"🤖 BOT:  {estado['json'].get('configuracion', '?')}   (modo: {estado['json'].get('modo_actual', '?')})")
+            else:
+                L.append("🤖 BOT:  no se pudo leer /estado_bot")
+            L.append("")
+            if metricas["ok"] and isinstance(metricas["json"], dict):
+                m = metricas["json"]
+                tot = {"entregados": 0, "leidos": 0, "respondidos": 0, "derivados": 0}
+                for v in m.values():
+                    for k in tot:
+                        try: tot[k] += int(v.get(k, 0))
+                        except Exception: pass
+                L.append("📈 MÉTRICAS (todas las campañas):")
+                L.append(f"     Entregados: {tot['entregados']}   Leídos: {tot['leidos']}   Respondidos: {tot['respondidos']}   Derivados: {tot['derivados']}")
+                L.append(f"     Campañas registradas: {len(m)}")
+                for camp, v in m.items():
+                    L.append(f"       • {camp}: entregados {v.get('entregados', 0)}, leídos {v.get('leidos', 0)}, respondidos {v.get('respondidos', 0)}, derivados {v.get('derivados', 0)}")
+            else:
+                L.append("📈 MÉTRICAS: no se pudo leer /metricas")
+            L.append("")
+            n_der = len(derivados["json"]) if (derivados["ok"] and isinstance(derivados["json"], list)) else "?"
+            L.append(f"💬 CHATS DERIVADOS (pendientes de atención): {n_der}")
+            if aprend["ok"] and isinstance(aprend["json"], list):
+                activos = sum(1 for a in aprend["json"] if a.get("activo"))
+                L.append(f"🎓 APRENDIZAJES: {len(aprend['json'])} (activos: {activos})")
+            else:
+                L.append("🎓 APRENDIZAJES: no se pudo leer /aprendizajes")
+            L.append("")
+            L.append(f"Actualizado: {mainCode.hora_arg().strftime('%d/%m/%Y %H:%M:%S')} (hora Arg)")
+            txt_mon.config(state="normal"); txt_mon.delete("1.0", tk.END)
+            txt_mon.insert(tk.END, "\n".join(L)); txt_mon.config(state="disabled")
+            btn_ref_mon.config(state="normal", text="🔄 Actualizar")
+
+        btn_ref_mon.config(command=cargar_monitor)
+
+        # ---------- PESTAÑA 2: CONVERSACIONES ----------
+        tab_conv = tk.Frame(nb, bg="white"); nb.add(tab_conv, text="  💬 Conversaciones  ")
+        izq = tk.Frame(tab_conv, width=340, bg="white"); izq.pack(side="left", fill="y", padx=10, pady=10); izq.pack_propagate(False)
+        der = tk.Frame(tab_conv, bg="white"); der.pack(side="right", fill="both", expand=True, padx=10, pady=10)
+        top_conv = tk.Frame(izq, bg="white"); top_conv.pack(fill="x")
+        tk.Label(top_conv, text="Conversaciones derivadas", bg="white", font=("Segoe UI", 12, "bold")).pack(side="left")
+        btn_ref_conv = tk.Button(top_conv, text="🔄", bg="#2196F3", fg="white", font=("Segoe UI", 9, "bold"), relief="flat", padx=6)
+        btn_ref_conv.pack(side="right")
+        frame_lc = tk.Frame(izq, bg="white"); frame_lc.pack(fill="both", expand=True, pady=(6, 0))
+        sb_lc = ttk.Scrollbar(frame_lc, orient="vertical")
+        lista_conv = tk.Listbox(frame_lc, font=("Segoe UI", 10), relief="solid", bd=1, highlightthickness=0, yscrollcommand=sb_lc.set)
+        sb_lc.config(command=lista_conv.yview); sb_lc.pack(side="right", fill="y"); lista_conv.pack(side="left", fill="both", expand=True)
+        tk.Label(der, text="Historial (lo que dijo el cliente y lo que respondió el bot)", bg="white", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        cont_conv, txt_conv = self._text_con_scroll(der, font=("Segoe UI", 11), wrap="word", state="disabled",
+                                                    relief="flat", highlightbackground="#ccc", highlightthickness=1)
+        cont_conv.pack(fill="both", expand=True, pady=(6, 0))
+        self._conv_datos = []
+
+        def cargar_conv():
+            btn_ref_conv.config(state="disabled")
+            def tarea():
+                r = mainCode.consultar_servidor("/derivados")
+                self.root.after(0, lambda: pintar_conv(r))
+            threading.Thread(target=tarea, daemon=True).start()
+
+        def pintar_conv(r):
+            lista_conv.delete(0, tk.END)
+            txt_conv.config(state="normal"); txt_conv.delete("1.0", tk.END); txt_conv.config(state="disabled")
+            self._conv_datos = r["json"] if (r["ok"] and isinstance(r["json"], list)) else []
+            if not self._conv_datos:
+                lista_conv.insert(tk.END, "(sin conversaciones o sin conexión)")
+            for d in self._conv_datos:
+                fecha = str(d.get("fecha", "")).split(".")[0]
+                lista_conv.insert(tk.END, f"+{d.get('telefono', '?')}   {fecha}")
+            btn_ref_conv.config(state="normal")
+
+        def mostrar_conv(evt):
+            sel = lista_conv.curselection()
+            if not sel or not self._conv_datos or sel[0] >= len(self._conv_datos):
+                return
+            d = self._conv_datos[sel[0]]
+            txt_conv.config(state="normal"); txt_conv.delete("1.0", tk.END)
+            txt_conv.insert(tk.END, f"📱 Cliente: +{d.get('telefono', '?')}\n📅 {d.get('fecha', '')}\n" + "-" * 50 + "\n\n")
+            for msg in d.get("historial", []):
+                role = "🤖 BOT" if msg.get("role") == "model" else "👤 CLIENTE"
+                text = (msg.get("parts", [""]) or [""])[0]
+                if "Eres el asistente virtual" in text or "BASE_CONOCIMIENTO" in text:
+                    continue
+                text = re.sub(r'\[AGENDADO:\s*.*?\]', '', text, flags=re.IGNORECASE).strip()
+                if text:
+                    txt_conv.insert(tk.END, f"{role}:\n{text}\n\n")
+            txt_conv.config(state="disabled")
+
+        lista_conv.bind("<<ListboxSelect>>", mostrar_conv)
+        btn_ref_conv.config(command=cargar_conv)
+
+        # ---------- PESTAÑA 3: JSON CRUDO ----------
+        tab_raw = tk.Frame(nb, bg="white"); nb.add(tab_raw, text="  🧾 JSON crudo  ")
+        top_raw = tk.Frame(tab_raw, bg="white"); top_raw.pack(fill="x", pady=(8, 4), padx=10)
+        tk.Label(top_raw, text="Endpoint:", bg="white", font=("Segoe UI", 10, "bold")).pack(side="left")
+        combo_ep = ttk.Combobox(top_raw, state="readonly", width=26,
+                                values=["/", "/estado_bot", "/derivados", "/metricas", "/tracking_general", "/aprendizajes", "/fresas_cortes"])
+        combo_ep.pack(side="left", padx=8); combo_ep.current(1)
+        btn_raw = tk.Button(top_raw, text="Consultar", bg="#2196F3", fg="white", font=("Segoe UI", 9, "bold"), relief="flat", padx=12)
+        btn_raw.pack(side="left")
+        lbl_raw_status = tk.Label(top_raw, text="", bg="white", fg="#555", font=("Segoe UI", 9))
+        lbl_raw_status.pack(side="left", padx=10)
+        cont_raw, txt_raw = self._text_con_scroll(tab_raw, font=("Consolas", 10), wrap="word", state="disabled",
+                                                  relief="flat", highlightbackground="#ccc", highlightthickness=1,
+                                                  bg="#1e1e1e", fg="#d4d4d4", insertbackground="white")
+        cont_raw.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        def consultar_raw():
+            ep = combo_ep.get() or "/estado_bot"
+            btn_raw.config(state="disabled"); lbl_raw_status.config(text="Consultando...")
+            def tarea():
+                r = mainCode.consultar_servidor(ep, timeout=40)
+                self.root.after(0, lambda: pintar_raw(ep, r))
+            threading.Thread(target=tarea, daemon=True).start()
+
+        def pintar_raw(ep, r):
+            if r["json"] is not None:
+                try: cuerpo = json.dumps(r["json"], indent=2, ensure_ascii=False)
+                except Exception: cuerpo = r["texto"]
+            else:
+                cuerpo = r["texto"]
+            txt_raw.config(state="normal"); txt_raw.delete("1.0", tk.END)
+            txt_raw.insert(tk.END, cuerpo); txt_raw.config(state="disabled")
+            lbl_raw_status.config(text=f"GET {ep}  →  código {r['status']}")
+            btn_raw.config(state="normal")
+
+        btn_raw.config(command=consultar_raw)
+
+        # Cargas iniciales
+        cargar_monitor()
+        cargar_conv()
+        consultar_raw()
 
     def abrir_chats_derivados(self):
         vent = tk.Toplevel(self.root)

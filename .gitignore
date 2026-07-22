@@ -1,3 +1,6 @@
 credenciales.json
 token.json
 dist/
+build/
+Instalador/
+build_log.txt
