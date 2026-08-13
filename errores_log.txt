@@ -1,0 +1,5 @@
+[2026-08-13 14:09:44] No se pudo bajar la foto 7: connection refused
+[2026-08-13 14:10:07] No se pudo bajar la foto 7: connection refused
+[2026-08-13 14:10:19] No se pudo bajar la foto 7: caido
+[2026-08-13 14:10:20] No se pudo bajar la foto 7: caido
+[2026-08-13 14:10:20] No se pudo bajar la foto 7: caido

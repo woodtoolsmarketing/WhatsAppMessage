@@ -862,6 +862,176 @@ class WoodToolsApp:
         cargar_lista()
 
     # ==========================================
+    # FOTOS DE LOS CHATS (las que manda el cliente)
+    # ==========================================
+    RE_MARCA_IMG = re.compile(r'\[Imagen analizada\s*#(\d+)\]', re.IGNORECASE)
+
+    MAX_INTENTOS_FOTO = 3
+
+    def _descargar_foto_chat(self, img_id, cuando_termine):
+        """Baja la foto del servidor en segundo plano y la deja en el caché."""
+        if not hasattr(self, "_fotos_chat"):
+            self._fotos_chat = {}
+        if not hasattr(self, "_intentos_foto"):
+            self._intentos_foto = {}
+        if not hasattr(self, "_esperan_foto"):
+            self._esperan_foto = {}
+        if img_id in self._fotos_chat:
+            # Ya se está bajando: se anota este panel para avisarle también cuando llegue
+            if self._fotos_chat[img_id] is None and cuando_termine not in self._esperan_foto.get(img_id, []):
+                self._esperan_foto.setdefault(img_id, []).append(cuando_termine)
+            return
+        self._fotos_chat[img_id] = None  # marca "descargando" para no pedirla dos veces
+        self._esperan_foto[img_id] = [cuando_termine]
+        self._intentos_foto[img_id] = self._intentos_foto.get(img_id, 0) + 1
+
+        def tarea():
+            datos = False
+            try:
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/chat_imagen/{img_id}", timeout=40)
+                if res.status_code == 200 and res.content:
+                    datos = res.content
+                elif res.status_code == 404:
+                    datos = "vencida"   # la foto ya se borró del servidor (pasaron 90 días)
+            except Exception as e:
+                mainCode.log_error(f"No se pudo bajar la foto {img_id}: {e}")
+
+            if datos is False:
+                # Error de red: se reintenta al reabrir el chat, pero con un tope para no
+                # quedar pidiéndola en bucle si el servidor está caído.
+                if self._intentos_foto.get(img_id, 0) >= self.MAX_INTENTOS_FOTO:
+                    self._fotos_chat[img_id] = "error"
+                else:
+                    self._fotos_chat.pop(img_id, None)
+            else:
+                self._fotos_chat[img_id] = datos
+
+            avisar = self._esperan_foto.pop(img_id, [])
+            for cb in avisar:
+                try:
+                    self.root.after(0, cb)
+                except Exception:
+                    pass  # se cerró el programa mientras bajaba la foto
+
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _ver_foto_grande(self, datos, titulo="Foto del cliente"):
+        """Abre la foto en una ventana aparte, a tamaño completo."""
+        try:
+            vent = tk.Toplevel(self.root)
+            vent.title(titulo)
+            vent.configure(bg="#222")
+            img = Image.open(io.BytesIO(datos))
+            ancho_max, alto_max = 1000, 700
+            if img.width > ancho_max or img.height > alto_max:
+                escala = min(ancho_max / img.width, alto_max / img.height)
+                img = img.resize((int(img.width * escala), int(img.height * escala)), Image.Resampling.LANCZOS)
+            foto = ImageTk.PhotoImage(img)
+            lbl = tk.Label(vent, image=foto, bg="#222")
+            lbl.image = foto  # referencia para que no la borre el recolector
+            lbl.pack(padx=10, pady=10)
+        except Exception as e:
+            messagebox.showerror("Foto", f"No se pudo abrir la foto.\n{e}")
+
+    def _pintar_historial(self, txt, historial, telefono="", fecha=""):
+        """Escribe el chat en el widget mostrando las FOTOS que mandó el cliente
+        (antes solo se veía el texto '[Imagen analizada]')."""
+        if not hasattr(self, "_fotos_chat"):
+            self._fotos_chat = {}
+        if not hasattr(self, "_refs_fotos"):
+            self._refs_fotos = {}
+
+        # Token del chat que se está mostrando: si el usuario cambia de conversación
+        # mientras baja una foto, el repintado tardío se descarta (antes pisaba el chat nuevo).
+        token = (id(txt), telefono, id(historial))
+        if not hasattr(self, "_token_chat"):
+            self._token_chat = {}
+        self._token_chat[id(txt)] = token
+
+        def repintar():
+            try:
+                if not txt.winfo_exists():
+                    return  # se cerró la ventana mientras bajaba la foto
+            except Exception:
+                return
+            if self._token_chat.get(id(txt)) != token:
+                return  # ya se está mirando otro chat
+            self._pintar_historial(txt, historial, telefono, fecha)
+
+        # Se destruyen las miniaturas del pintado anterior (si no, quedan colgadas en memoria)
+        for w in list(txt.children.values()):
+            try: w.destroy()
+            except Exception: pass
+        self._refs_fotos.pop(id(txt), None)
+        refs = self._refs_fotos.setdefault(id(txt), [])
+        del refs[:]
+
+        pos_scroll = txt.yview()[0]  # para no perder el punto donde estaba leyendo
+        txt.config(state="normal")
+        txt.delete("1.0", tk.END)
+        if telefono:
+            txt.insert(tk.END, f"📱 Cliente: +{telefono}\n")
+        if fecha:
+            txt.insert(tk.END, f"📅 {fecha}\n")
+        if telefono or fecha:
+            txt.insert(tk.END, "-" * 50 + "\n\n")
+
+        for msg in historial or []:
+            texto = (msg.get('parts', [''])or[''])[0] or ''
+            if "Eres el asistente virtual" in texto or "BASE_CONOCIMIENTO" in texto:
+                continue
+            rol = "🤖 BOT" if msg.get('role') == 'model' else "👤 CLIENTE"
+
+            ids_fotos = [int(x) for x in self.RE_MARCA_IMG.findall(texto)]
+            # se saca el marcador del texto; la foto se dibuja aparte
+            limpio = self.RE_MARCA_IMG.sub('', texto)
+            # Fotos viejas (antes de esta versión): no se guardaron, no hay nada para mostrar
+            limpio = re.sub(r'\[Imagen analizada\]', '📷 (foto no guardada)', limpio, flags=re.IGNORECASE)
+            limpio = re.sub(r'\[AGENDADO:\s*.*?\]', '', limpio, flags=re.IGNORECASE).strip()
+
+            if not ids_fotos and not limpio:
+                continue
+
+            txt.insert(tk.END, f"{rol}:\n")
+            for img_id in ids_fotos:
+                datos = self._fotos_chat.get(img_id, "no-pedida")
+                if datos == "no-pedida":
+                    txt.insert(tk.END, "   ⏳ cargando foto...\n")
+                    self._descargar_foto_chat(img_id, repintar)
+                elif datos is None:
+                    txt.insert(tk.END, "   ⏳ cargando foto...\n")
+                elif datos == "vencida":
+                    txt.insert(tk.END, "   📷 (foto vencida: pasaron más de 90 días)\n")
+                elif datos == "error":
+                    txt.insert(tk.END, "   📷 (no se pudo cargar la foto; reabrí la ventana para reintentar)\n")
+                else:
+                    try:
+                        # La miniatura se guarda ya armada para no rehacerla en cada repintado
+                        if not hasattr(self, "_mini_cache"):
+                            self._mini_cache = {}
+                        if img_id not in self._mini_cache:
+                            img = Image.open(io.BytesIO(datos))
+                            img.thumbnail((260, 260), Image.Resampling.LANCZOS)
+                            self._mini_cache[img_id] = ImageTk.PhotoImage(img)
+                        foto = self._mini_cache[img_id]
+                        lbl = tk.Label(txt, image=foto, cursor="hand2", bd=1, relief="solid")
+                        lbl.image = foto
+                        lbl.bind("<Button-1>", lambda e, d=datos: self._ver_foto_grande(d))
+                        txt.window_create(tk.END, window=lbl)
+                        refs.append(foto)
+                        txt.insert(tk.END, "\n   (clic en la foto para verla grande)\n")
+                    except Exception:
+                        txt.insert(tk.END, "   📷 (foto dañada)\n")
+            if limpio:
+                txt.insert(tk.END, f"{limpio}\n")
+            txt.insert(tk.END, "\n")
+
+        txt.config(state="disabled")
+        if pos_scroll:
+            try: txt.yview_moveto(pos_scroll)
+            except Exception: pass
+
+    # ==========================================
     # MONITOR DEL SERVIDOR (qué dice el servidor)
     # ==========================================
     def _text_con_scroll(self, parent, **kw):
@@ -989,17 +1159,8 @@ class WoodToolsApp:
             if not sel or not self._conv_datos or sel[0] >= len(self._conv_datos):
                 return
             d = self._conv_datos[sel[0]]
-            txt_conv.config(state="normal"); txt_conv.delete("1.0", tk.END)
-            txt_conv.insert(tk.END, f"📱 Cliente: +{d.get('telefono', '?')}\n📅 {d.get('fecha', '')}\n" + "-" * 50 + "\n\n")
-            for msg in d.get("historial", []):
-                role = "🤖 BOT" if msg.get("role") == "model" else "👤 CLIENTE"
-                text = (msg.get("parts", [""]) or [""])[0]
-                if "Eres el asistente virtual" in text or "BASE_CONOCIMIENTO" in text:
-                    continue
-                text = re.sub(r'\[AGENDADO:\s*.*?\]', '', text, flags=re.IGNORECASE).strip()
-                if text:
-                    txt_conv.insert(tk.END, f"{role}:\n{text}\n\n")
-            txt_conv.config(state="disabled")
+            self._pintar_historial(txt_conv, d.get("historial", []),
+                                   telefono=d.get("telefono", "?"), fecha=d.get("fecha", ""))
 
         lista_conv.bind("<<ListboxSelect>>", mostrar_conv)
         btn_ref_conv.config(command=cargar_conv)
@@ -1218,23 +1379,10 @@ class WoodToolsApp:
             real_idx = self.lista_indices_map[idx]
             chat_data = self.datos_chats_actuales[real_idx]
             
-            txt_chat.config(state="normal")
-            txt_chat.delete("1.0", tk.END)
-            
-            txt_chat.insert(tk.END, f"📱 Cliente: +{chat_data['telefono']}\n")
-            txt_chat.insert(tk.END, f"📅 Fecha de derivación: {chat_data['fecha']}\n")
-            txt_chat.insert(tk.END, "-"*50 + "\n\n")
-            
-            for msg in chat_data.get('historial', []):
-                role = "🤖 BOT" if msg.get('role') == 'model' else "👤 CLIENTE"
-                text = msg.get('parts', [''])[0]
-                if "Eres el asistente virtual" in text or "BASE_CONOCIMIENTO" in text: continue
-                # Limpiar etiqueta oculta para que el operador no la vea en el chat
-                text_clean = re.sub(r'\[AGENDADO:\s*.*?\]', '', text, flags=re.IGNORECASE).strip()
-                if text_clean:
-                    txt_chat.insert(tk.END, f"{role}:\n{text_clean}\n\n")
-                
-            txt_chat.config(state="disabled")
+            # Pinta el chat mostrando las fotos que mandó el cliente (no el marcador de texto)
+            self._pintar_historial(txt_chat, chat_data.get('historial', []),
+                                   telefono=chat_data.get('telefono', ''),
+                                   fecha=f"Fecha de derivación: {chat_data.get('fecha', '')}")
             btn_resuelto.config(state="normal")
             btn_aprender_chat.config(state="normal")
 
