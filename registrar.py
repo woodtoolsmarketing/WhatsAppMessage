@@ -1,15 +1,20 @@
+import os
 import requests
 
-# 1. PEGÁ ACÁ TU TOKEN LARGO DE SIEMPRE
-TOKEN = "EAAUkLctR4q0BQ8mcvr7YtqEacloCMCDHq1AY8VE0gc0ZBIIZBboTSCSEIEOQQKbNtfD7i0HwqiJvnd9FZCdH27rlBVsOXer1Qmlx3N5GAMhO6FmRNmYwOuxCKcJAgqo9Xy8IwtiQcZCFcuJ2fIMQnO7mPvBjEYrAgCDs7eMyn1lZAT7aDaJ8SKG5I1cp7yAZDZD" 
+# Script manual para registrar el número en la Cloud API (verificación en dos pasos).
+# Los datos sensibles se leen de variables de entorno para NO dejarlos en el código:
+#   WT_CLOUD_API_TOKEN  -> token de acceso de Meta
+#   WT_PHONE_NUMBER_ID  -> ID del número (por defecto el de siempre)
+#   WT_REGISTER_PIN     -> PIN de 6 dígitos que vos elegís (anotalo)
+TOKEN = os.environ.get("WT_CLOUD_API_TOKEN", "")
+PHONE_ID = os.environ.get("WT_PHONE_NUMBER_ID", "1041050652417644")
+PIN_SEGURIDAD = os.environ.get("WT_REGISTER_PIN", "")
 
-# 2. ESTE ES TU ID CORRECTO
-PHONE_ID = "1041050652417644"
+if not TOKEN or not PIN_SEGURIDAD:
+    print("Faltan variables de entorno. Definí WT_CLOUD_API_TOKEN y WT_REGISTER_PIN antes de correr este script.")
+    raise SystemExit(1)
 
-# 3. INVENTÁ UN PIN DE 6 NÚMEROS (Anotalo por ahí por las dudas)
-PIN_SEGURIDAD = "532026" 
-
-url = f"https://graph.facebook.com/v17.0/{PHONE_ID}/register"
+url = f"https://graph.facebook.com/v21.0/{PHONE_ID}/register"
 headers = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
@@ -20,5 +25,5 @@ data = {
 }
 
 print("Enviando orden de registro a Meta...")
-response = requests.post(url, headers=headers, json=data)
+response = requests.post(url, headers=headers, json=data, timeout=30)
 print("Respuesta de Meta:", response.json())

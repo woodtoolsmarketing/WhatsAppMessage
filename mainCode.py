@@ -6,6 +6,7 @@ import urllib.parse
 import sqlite3
 import re
 import time
+import mimetypes
 from datetime import datetime, timedelta
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -15,14 +16,17 @@ from google.auth.transport.requests import Request
 # ==========================================
 # CONFIGURACIÓN DE LA API DE WHATSAPP Y SHEETS
 # ==========================================
-CLOUD_API_TOKEN = "EAAUkLctR4q0BQ8mcvr7YtqEacloCMCDHq1AY8VE0gc0ZBIIZBboTSCSEIEOQQKbNtfD7i0HwqiJvnd9FZCdH27rlBVsOXer1Qmlx3N5GAMhO6FmRNmYwOuxCKcJAgqo9Xy8IwtiQcZCFcuJ2fIMQnO7mPvBjEYrAgCDs7eMyn1lZAT7aDaJ8SKG5I1cp7yAZDZD"
-PHONE_NUMBER_ID = "1041050652417644"
-VERSION = "v17.0"
+# El token se puede pasar por variable de entorno WT_CLOUD_API_TOKEN para no
+# dejarlo en el código (recomendado). Si no está, usa el valor de abajo.
+# IMPORTANTE: este token estuvo expuesto en el repo; conviene rotarlo en Meta.
+CLOUD_API_TOKEN = os.environ.get("WT_CLOUD_API_TOKEN", "EAAUkLctR4q0BQ8mcvr7YtqEacloCMCDHq1AY8VE0gc0ZBIIZBboTSCSEIEOQQKbNtfD7i0HwqiJvnd9FZCdH27rlBVsOXer1Qmlx3N5GAMhO6FmRNmYwOuxCKcJAgqo9Xy8IwtiQcZCFcuJ2fIMQnO7mPvBjEYrAgCDs7eMyn1lZAT7aDaJ8SKG5I1cp7yAZDZD")
+PHONE_NUMBER_ID = os.environ.get("WT_PHONE_NUMBER_ID", "1041050652417644")
+VERSION = "v21.0"
 BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 
 # Versión de esta app y repo público desde donde se descargan las actualizaciones
-VERSION_APP = "12.3"
+VERSION_APP = "12.4"
 GITHUB_REPO = "woodtoolsmarketing/WhatsAppMessage"
 
 NOMBRE_HOJA = "Base de datos wt"
@@ -244,6 +248,14 @@ PLANTILLA_RECOTIZACION = "recotizacion_prospecto"
 PLANTILLA_NOVEDADES = "aviso_novedades_wt"
 PLANTILLA_PERSONALIZADO = "personalizado_2"
 
+# Plantillas equivalentes con ENCABEZADO DE VIDEO. Hay que crearlas en Meta y que las
+# apruebe; el nombre debe coincidir EXACTO con el de la plantilla aprobada. Se pueden
+# sobreescribir por variable de entorno por si les ponés otro nombre al crearlas.
+PLANTILLA_PROMOS_VIDEO = os.environ.get("WT_PLANTILLA_PROMOS_VIDEO", "oferta_top_3_video")
+PLANTILLA_RESCATE_VIDEO = os.environ.get("WT_PLANTILLA_RESCATE_VIDEO", "reactivacion_cliente_video")
+PLANTILLA_NOVEDADES_VIDEO = os.environ.get("WT_PLANTILLA_NOVEDADES_VIDEO", "aviso_novedades_wt_video")
+PLANTILLA_PERSONALIZADO_VIDEO = os.environ.get("WT_PLANTILLA_PERSONALIZADO_VIDEO", "personalizado_2_video")
+
 DB_VENDEDORES = {
     "Valentín": ["5491145394279"], 
     "Carlos": ["5491165630406"], 
@@ -265,7 +277,7 @@ def formatear_telefono(numero_raw):
     
     if not num_str: return ""
     if num_str.startswith("549") and len(num_str) == 13: return num_str
-    if num_str.startswith("54") and len(num_str) == 12: return "549" + num_str[2:]
+    if num_str.startswith("54") and not num_str.startswith("549") and len(num_str) == 12: return "549" + num_str[2:]
     if num_str.startswith("549"): num_str = num_str[3:]
     elif num_str.startswith("54"): num_str = num_str[2:]
     if num_str.startswith("0"): num_str = num_str[1:]
@@ -505,41 +517,94 @@ def revisar_numeros_problematicos():
 
 def identificar_cols_productos(df): return ['Sierras', 'Cuchillas', 'Mechas', 'Fresas', 'Cabezales']
 
-def _enviar_request(data):
-    """VERSIÓN ANTI-CONGELAMIENTO: Registra errores sin colapsar la app."""
-    try:
-        headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}", "Content-Type": "application/json"}
-        res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data, timeout=10)
-        
-        time.sleep(1) # Pausa obligatoria para no ahogar la API
-        
-        if res.status_code == 200: 
-            return True, "OK"
-        elif 400 <= res.status_code < 500: 
-            log_error(f"META RECHAZÓ EL MENSAJE (Error 4xx): {res.text}") 
-            return False, "ERROR DEL CLIENTE"
-        else: 
-            log_error(f"ERROR DEL SERVIDOR META (Error 5xx): {res.text}")
-            return False, "ERROR DEL SERVIDOR" 
-    except requests.exceptions.Timeout:
-        log_error("Timeout: Meta tardó demasiado en responder.")
-        return False, "TIMEOUT"
-    except Exception as e: 
-        log_error(f"Falla de red crítica: {str(e)}")
-        return False, "ERROR DE RED O SERVIDOR"
+def _enviar_request(data, reintentos=2):
+    """VERSIÓN ANTI-CONGELAMIENTO: registra errores sin colapsar la app.
+    Reintenta ante rate-limit (429) y errores de servidor (5xx) con espera creciente."""
+    headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}", "Content-Type": "application/json"}
+    for intento in range(reintentos + 1):
+        try:
+            res = requests.post(f"{BASE_URL}/messages", headers=headers, json=data, timeout=15)
+
+            time.sleep(1)  # Pausa obligatoria para no ahogar la API
+
+            if res.status_code == 200:
+                return True, "OK"
+
+            if res.status_code == 429:
+                log_error(f"RATE LIMIT (429) de Meta, intento {intento + 1}: {res.text}")
+                if intento < reintentos:
+                    time.sleep(5 * (intento + 1))
+                    continue
+                return False, "RATE LIMIT"
+
+            if 500 <= res.status_code < 600:
+                log_error(f"ERROR DEL SERVIDOR META (5xx), intento {intento + 1}: {res.text}")
+                if intento < reintentos:
+                    time.sleep(3 * (intento + 1))
+                    continue
+                return False, "ERROR DEL SERVIDOR"
+
+            if 400 <= res.status_code < 500:
+                log_error(f"META RECHAZÓ EL MENSAJE (Error {res.status_code}): {res.text}")
+                return False, "ERROR DEL CLIENTE"
+
+            log_error(f"Respuesta inesperada de Meta ({res.status_code}): {res.text}")
+            return False, f"ERROR {res.status_code}"
+
+        except requests.exceptions.Timeout:
+            log_error(f"Timeout: Meta tardó demasiado en responder (intento {intento + 1}).")
+            if intento < reintentos:
+                continue
+            return False, "TIMEOUT"
+        except Exception as e:
+            log_error(f"Falla de red crítica: {str(e)}")
+            if intento < reintentos:
+                time.sleep(2)
+                continue
+            return False, "ERROR DE RED O SERVIDOR"
+    return False, "ERROR DESCONOCIDO"
     
-def subir_imagen_whatsapp(ruta):
+# Tipos de archivo aceptados y su MIME. Antes se subía TODO como 'image/jpeg',
+# lo que hacía que Meta rechazara PNG y videos.
+MIME_POR_EXTENSION = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".webp": "image/webp",
+    ".mp4": "video/mp4", ".3gp": "video/3gpp", ".3gpp": "video/3gpp",
+}
+
+def _detectar_mime(ruta):
+    ext = os.path.splitext(str(ruta))[1].lower()
+    if ext in MIME_POR_EXTENSION:
+        return MIME_POR_EXTENSION[ext]
+    adivinado, _ = mimetypes.guess_type(str(ruta))
+    return adivinado or "application/octet-stream"
+
+def es_video(ruta):
+    """True si la ruta apunta a un archivo de video (por extensión)."""
+    return _detectar_mime(ruta).startswith("video/")
+
+def subir_media_whatsapp(ruta):
+    """Sube una imagen O un video a Meta y devuelve el media_id (o None).
+    Detecta el MIME por la extensión y cierra el archivo correctamente."""
     try:
+        mime = _detectar_mime(ruta)
         headers = {"Authorization": f"Bearer {CLOUD_API_TOKEN}"}
-        files = {'file': (os.path.basename(ruta), open(ruta, 'rb'), 'image/jpeg')}
         data = {'messaging_product': 'whatsapp'}
-        res = requests.post(f"{BASE_URL}/media", headers=headers, files=files, data=data, timeout=20)
-        if res.status_code == 200: return res.json()['id']
-        log_error(f"Error subiendo imagen a Meta: {res.text}")
+        # timeout amplio: los videos pesan más que una foto
+        with open(ruta, 'rb') as fh:
+            files = {'file': (os.path.basename(ruta), fh, mime)}
+            res = requests.post(f"{BASE_URL}/media", headers=headers, files=files, data=data, timeout=120)
+        if res.status_code == 200:
+            return res.json().get('id')
+        log_error(f"Error subiendo media a Meta ({mime}): {res.text}")
         return None
     except Exception as e:
-        log_error(f"Excepción subiendo imagen: {e}")
+        log_error(f"Excepción subiendo media: {e}")
         return None
+
+def subir_imagen_whatsapp(ruta):
+    # Compatibilidad: delega en subir_media_whatsapp (soporta imagen y video).
+    return subir_media_whatsapp(ruta)
 
 # ==========================================
 # MAGIA DE BOTONES: EXTRACTOR DE ENLACE DINÁMICO
@@ -553,12 +618,18 @@ def extraer_sufijo_dinamico(link_completo):
 # ==========================================
 # FUNCIONES DE ENVÍO DE PLANTILLAS
 # ==========================================
-def enviar_promocion(tel, nombre, producto_promo, link, media_id): 
+def _componente_header_media(media_id, es_video=False):
+    """Componente 'header' con imagen o video, segun corresponda."""
+    tipo = "video" if es_video else "image"
+    return {"type": "header", "parameters": [{"type": tipo, tipo: {"id": media_id}}]}
+
+def enviar_promocion(tel, nombre, producto_promo, link, media_id, es_video=False):
     dynamic_url = extraer_sufijo_dinamico(link)
+    nombre_plantilla = PLANTILLA_PROMOS_VIDEO if es_video else PLANTILLA_PROMOS
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_PROMOS, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+            "name": nombre_plantilla, "language": {"code": "es"}, "components": [
+                _componente_header_media(media_id, es_video),
                 {"type": "body", "parameters": [
                     {"type": "text", "text": str(nombre)}, 
                     {"type": "text", "text": str(producto_promo)}
@@ -570,12 +641,13 @@ def enviar_promocion(tel, nombre, producto_promo, link, media_id):
         }
     })
 
-def enviar_rescate(tel, nom, prod, link, media_id): 
+def enviar_rescate(tel, nom, prod, link, media_id, es_video=False):
     dynamic_url = extraer_sufijo_dinamico(link)
+    nombre_plantilla = PLANTILLA_RESCATE_VIDEO if es_video else PLANTILLA_RESCATE
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_RESCATE, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+            "name": nombre_plantilla, "language": {"code": "es"}, "components": [
+                _componente_header_media(media_id, es_video),
                 {"type": "body", "parameters": [
                     {"type": "text", "text": str(nom)}, 
                     {"type": "text", "text": str(prod)}
@@ -602,13 +674,14 @@ def enviar_gira(tel, vend, link):
         }
     })
 
-def enviar_novedades(tel, tipo_novedad, herramienta, link_wa, media_id):
+def enviar_novedades(tel, tipo_novedad, herramienta, link_wa, media_id, es_video=False):
     frase = "Acaban de ingresar nuevos modelos." if tipo_novedad == "Nuevo producto" else "Pudimos reponer el stock que esperabas."
     dynamic_url = extraer_sufijo_dinamico(link_wa)
+    nombre_plantilla = PLANTILLA_NOVEDADES_VIDEO if es_video else PLANTILLA_NOVEDADES
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_NOVEDADES, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
+            "name": nombre_plantilla, "language": {"code": "es"}, "components": [
+                _componente_header_media(media_id, es_video),
                 {"type": "body", "parameters": [
                     {"type": "text", "text": str(herramienta)},
                     {"type": "text", "text": str(frase)}
@@ -627,13 +700,17 @@ def enviar_recotizacion(tel, link):
         ]}
     ]}})
 
-def enviar_personalizado(tel, caption_final, link_completo, media_id): 
+def enviar_personalizado(tel, caption_final, link_completo, media_id, es_video=False):
     dynamic_url = extraer_sufijo_dinamico(link_completo)
+    nombre_plantilla = PLANTILLA_PERSONALIZADO_VIDEO if es_video else PLANTILLA_PERSONALIZADO
+    # Meta rechaza parámetros de plantilla con saltos de línea, tabs o >4 espacios:
+    # colapsamos todos los espacios en blanco a uno solo.
+    texto_limpio = re.sub(r'\s+', ' ', str(caption_final)).strip()[:1000]
     return _enviar_request({
         "messaging_product": "whatsapp", "to": tel, "type": "template", "template": {
-            "name": PLANTILLA_PERSONALIZADO, "language": {"code": "es"}, "components": [
-                {"type": "header", "parameters": [{"type": "image", "image": {"id": media_id}}]},
-                {"type": "body", "parameters": [{"type": "text", "text": str(caption_final)[:1000]}]},
+            "name": nombre_plantilla, "language": {"code": "es"}, "components": [
+                _componente_header_media(media_id, es_video),
+                {"type": "body", "parameters": [{"type": "text", "text": texto_limpio}]},
                 {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": dynamic_url}]}
             ]
         }

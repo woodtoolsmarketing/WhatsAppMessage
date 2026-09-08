@@ -170,9 +170,21 @@ class WoodToolsApp:
         self.lbl_aviso_meta = tk.Label(self.frame_dinamico, text="🔒 Plantilla Meta", fg="#d32f2f", bg=COLOR_PANELES, font=("Arial", 8, "bold"))
         self.lbl_tip_tags = tk.Label(self.frame_dinamico, text="💡 Usa [CLIENTE] y [LINK]", fg="#1976d2", bg=COLOR_PANELES, font=("Arial", 8, "italic"))
 
+        # Selector de tipo de archivo: foto o video (el video usa una plantilla de Meta aparte).
+        self.media_tipo_var = tk.StringVar(value="foto")
+        self.frame_media_tipo = tk.Frame(self.frame_dinamico, bg=COLOR_PANELES)
+        tk.Label(self.frame_media_tipo, text="Adjuntar:", bg=COLOR_PANELES, fg="black", font=("Arial", 8, "bold")).pack(side="left")
+        tk.Radiobutton(self.frame_media_tipo, text="📷 Foto", variable=self.media_tipo_var, value="foto", bg=COLOR_PANELES, command=self._cambiar_tipo_media).pack(side="left")
+        tk.Radiobutton(self.frame_media_tipo, text="🎬 Video", variable=self.media_tipo_var, value="video", bg=COLOR_PANELES, command=self._cambiar_tipo_media).pack(side="left")
+
         self.btn_subir_imagen = tk.Button(self.frame_dinamico, text="📂 Adjuntar Imagen (Obligatoria)", command=self.seleccionar_imagen)
-        self.btn_quitar_imagen = tk.Button(self.frame_dinamico, text="❌ Quitar Imagen", command=self.quitar_imagen, fg="red")
+        self.btn_quitar_imagen = tk.Button(self.frame_dinamico, text="❌ Quitar", command=self.quitar_imagen, fg="red")
         self.lbl_nombre_imagen = tk.Label(self.frame_dinamico, text="Sin imagen", bg=COLOR_PANELES, fg="red")
+        # Vista previa de la foto elegida (para revisarla antes de enviar). Al hacer clic
+        # se abre en el visor del sistema (NO redirige a ningún chat).
+        self._thumb_preview = None
+        self.lbl_preview_imagen = tk.Label(self.frame_dinamico, bg=COLOR_PANELES, cursor="hand2")
+        self.lbl_preview_imagen.bind("<Button-1>", lambda e: self._abrir_archivo_seleccionado())
 
         self.frame_preview = tk.LabelFrame(frame_campana, text="Vista Previa", bg=COLOR_PANELES, fg="#555", font=("Segoe UI", 9, "bold"))
         self.frame_preview.grid(row=0, column=3, rowspan=2, padx=10, sticky="nsew")
@@ -339,26 +351,27 @@ class WoodToolsApp:
     # ==========================================
     def actualizar_estado_bot_loop(self):
         def tarea():
-            data = mainCode.obtener_estado_bot_nube()
-            if data:
-                self.config_bot_actual = data['configuracion']
-                modo = data['modo_actual']
-                
-                if modo == "INTELIGENTE":
-                    self.root.after(0, lambda: self.lbl_bot_estado.config(text="● ENCENDIDO", fg="#2E7D32"))
+            try:
+                data = mainCode.obtener_estado_bot_nube()
+                if data:
+                    self.config_bot_actual = data.get('configuracion', self.config_bot_actual)
+                    modo = data.get('modo_actual')
+
+                    if modo == "INTELIGENTE":
+                        self.root.after(0, lambda: self.lbl_bot_estado.config(text="● ENCENDIDO", fg="#2E7D32"))
+                    else:
+                        self.root.after(0, lambda: self.lbl_bot_estado.config(text="○ APAGADO (Básico)", fg="#C62828"))
+
+                    textos = {"AUTO": "Modo: Automático 🕒", "ON": "Modo: Siempre ON 🟢", "OFF": "Modo: Siempre OFF 🔴"}
+                    self.root.after(0, lambda t=textos.get(self.config_bot_actual, "Modo: ?"): self.btn_toggle_bot.config(text=t))
                 else:
-                    self.root.after(0, lambda: self.lbl_bot_estado.config(text="○ APAGADO (Básico)", fg="#C62828"))
-                
-                if self.config_bot_actual == "AUTO":
-                    self.root.after(0, lambda: self.btn_toggle_bot.config(text="Modo: Automático 🕒"))
-                elif self.config_bot_actual == "ON":
-                    self.root.after(0, lambda: self.btn_toggle_bot.config(text="Modo: Siempre ON 🟢"))
-                else:
-                    self.root.after(0, lambda: self.btn_toggle_bot.config(text="Modo: Siempre OFF 🔴"))
-            else:
-                self.root.after(0, lambda: self.lbl_bot_estado.config(text="ERROR CONEXIÓN", fg="gray"))
-            
-            self.root.after(30000, self.actualizar_estado_bot_loop)
+                    self.root.after(0, lambda: self.lbl_bot_estado.config(text="ERROR CONEXIÓN", fg="gray"))
+            except Exception as e:
+                mainCode.log_error(f"Error en actualizar_estado_bot_loop: {e}")
+            finally:
+                # El refresco se reprograma SIEMPRE, aunque el servidor devuelva algo raro,
+                # para que el indicador del bot no se congele para siempre.
+                self.root.after(30000, self.actualizar_estado_bot_loop)
 
         threading.Thread(target=tarea, daemon=True).start()
 
@@ -374,11 +387,15 @@ class WoodToolsApp:
                 self.config_bot_actual = nuevo
                 data = mainCode.obtener_estado_bot_nube()
                 if data:
-                    self.root.after(0, lambda: self.btn_toggle_bot.config(state="normal"))
                     self.root.after(0, lambda d=data: self.actualizar_ui_manual(d))
+                else:
+                    # El POST salió bien pero el GET falló: al menos dejamos el texto según el modo.
+                    textos = {"AUTO": "Modo: Automático 🕒", "ON": "Modo: Siempre ON 🟢", "OFF": "Modo: Siempre OFF 🔴"}
+                    self.root.after(0, lambda t=textos.get(self.config_bot_actual, "Modo: ?"): self.btn_toggle_bot.config(text=t))
             else:
                 self.root.after(0, lambda: messagebox.showerror("Error", "No se pudo conectar con el servidor para cambiar el modo."))
-                self.root.after(0, lambda: self.btn_toggle_bot.config(state="normal"))
+            # SIEMPRE rehabilitar el botón, pase lo que pase (antes quedaba en "Cambiando..." si el GET fallaba).
+            self.root.after(0, lambda: self.btn_toggle_bot.config(state="normal"))
 
         threading.Thread(target=enviar, daemon=True).start()
 
@@ -1208,7 +1225,17 @@ class WoodToolsApp:
         consultar_raw()
 
     def abrir_chats_derivados(self):
+        # Evitamos abrir dos veces esta ventana: como su estado se guarda en atributos
+        # de la instancia, dos ventanas abiertas se pisarían los datos entre sí.
+        if getattr(self, "_vent_derivados", None) is not None:
+            try:
+                if self._vent_derivados.winfo_exists():
+                    self._vent_derivados.lift(); self._vent_derivados.focus_force(); return
+            except Exception:
+                pass
         vent = tk.Toplevel(self.root)
+        self._vent_derivados = vent
+        vent.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_vent_derivados", None), vent.destroy()))
         vent.title("Chats Pendientes / Requieren Atención")
         vent.geometry("1000x700")
         vent.configure(bg="white")
@@ -1397,7 +1424,7 @@ class WoodToolsApp:
             real_idx = self.lista_indices_map[idx]
             tel = self.datos_chats_actuales[real_idx]['telefono']
             try:
-                requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados/{tel}")
+                requests.delete(f"{URL_SERVIDOR_RENDER.rstrip('/')}/derivados/{tel}", timeout=30)
                 cargar_datos() 
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo borrar el chat.\nDetalle: {str(e)}", parent=vent)
@@ -1518,7 +1545,7 @@ class WoodToolsApp:
             
         for w in self.frame_dinamico.winfo_children():
             w.pack_forget()
-            if isinstance(w, tk.Label) and w not in [self.lbl_aviso_meta, self.lbl_tip_tags, self.lbl_nombre_imagen]:
+            if isinstance(w, tk.Label) and w not in [self.lbl_aviso_meta, self.lbl_tip_tags, self.lbl_nombre_imagen, self.lbl_preview_imagen]:
                 w.config(bg=COLOR_PANELES, fg="black")
         
         self.lbl_aviso_meta.pack(anchor="w", pady=(0,2))
@@ -1546,22 +1573,74 @@ class WoodToolsApp:
         tipos_con_imagen = ["Promociones", "Rescate (Te extrañamos)", "Novedades", "Personalizado"]
         
         if tipo in tipos_con_imagen:
-            self.btn_subir_imagen.config(text="📂 Adjuntar Imagen (Obligatoria)")
+            self.frame_media_tipo.pack(anchor="w", pady=(0, 2))
+            es_vid = self.media_tipo_var.get() == "video"
+            self.btn_subir_imagen.config(text="📂 Adjuntar Video (Obligatorio)" if es_vid else "📂 Adjuntar Imagen (Obligatoria)")
             self.btn_subir_imagen.pack(anchor="w", pady=(0,2))
             if self.ruta_imagen_seleccionada: self.btn_quitar_imagen.pack(anchor="w", pady=(0,2))
             self.lbl_nombre_imagen.config(bg=COLOR_PANELES)
             self.lbl_nombre_imagen.pack(anchor="w")
+            if self.ruta_imagen_seleccionada:
+                self.lbl_preview_imagen.pack(anchor="w", pady=(4, 0))
         else:
-            self.quitar_imagen() 
+            self.quitar_imagen()
 
         self.actualizar_preview()
 
+    def _cambiar_tipo_media(self):
+        # Al cambiar entre foto y video se limpia lo elegido (una foto no sirve para
+        # una plantilla de video y viceversa) y se ajusta el texto del botón.
+        self.quitar_imagen()
+        es_vid = self.media_tipo_var.get() == "video"
+        self.btn_subir_imagen.config(text="📂 Adjuntar Video (Obligatorio)" if es_vid else "📂 Adjuntar Imagen (Obligatoria)")
+
     def seleccionar_imagen(self):
-        ruta = filedialog.askopenfilename(filetypes=[("IMG", "*.jpg *.jpeg *.png")])
-        if ruta: self.ruta_imagen_seleccionada = ruta; self.lbl_nombre_imagen.config(text="OK", fg="green"); self.btn_quitar_imagen.pack(anchor="w")
+        if self.media_tipo_var.get() == "video":
+            ruta = filedialog.askopenfilename(filetypes=[("Video", "*.mp4 *.3gp")])
+        else:
+            ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
+        if ruta:
+            self.ruta_imagen_seleccionada = ruta
+            self.lbl_nombre_imagen.config(text="OK", fg="green")
+            self.btn_quitar_imagen.pack(anchor="w")
+            self._mostrar_preview_imagen()
 
     def quitar_imagen(self):
-        self.ruta_imagen_seleccionada = None; self.lbl_nombre_imagen.config(text="Sin imagen", fg="red"); self.btn_quitar_imagen.pack_forget()
+        self.ruta_imagen_seleccionada = None
+        self.lbl_nombre_imagen.config(text="Sin imagen", fg="red")
+        self.btn_quitar_imagen.pack_forget()
+        self._thumb_preview = None
+        self.lbl_preview_imagen.config(image="", text="")
+        self.lbl_preview_imagen.image = None
+        self.lbl_preview_imagen.pack_forget()
+
+    def _mostrar_preview_imagen(self):
+        """Muestra una miniatura de la foto elegida para poder revisarla antes de enviar."""
+        ruta = self.ruta_imagen_seleccionada
+        if not ruta:
+            self.quitar_imagen(); return
+        try:
+            img = Image.open(ruta)
+            img.thumbnail((150, 150), Image.Resampling.LANCZOS)
+            self._thumb_preview = ImageTk.PhotoImage(img)
+            self.lbl_preview_imagen.config(image=self._thumb_preview, text="", bd=1, relief="solid")
+            self.lbl_preview_imagen.image = self._thumb_preview
+        except Exception:
+            # Los videos no se pueden previsualizar con PIL: mostramos el nombre y un ícono.
+            self._thumb_preview = None
+            icono = "🎬 " if self.media_tipo_var.get() == "video" else "📎 "
+            self.lbl_preview_imagen.config(image="", text=icono + os.path.basename(ruta) + "\n(clic para abrirlo)", fg="#333", bd=0, relief="flat")
+            self.lbl_preview_imagen.image = None
+        self.lbl_preview_imagen.pack(anchor="w", pady=(4, 0))
+
+    def _abrir_archivo_seleccionado(self):
+        """Abre el archivo elegido en el visor del sistema (no redirige a ningún chat)."""
+        ruta = self.ruta_imagen_seleccionada
+        if ruta and os.path.exists(ruta):
+            try:
+                os.startfile(ruta)
+            except Exception as e:
+                mainCode.log_error(f"No se pudo abrir la vista previa: {e}")
 
     def _limpiar_panel_telefonos(self):
         for w in self.frame_telefonos.winfo_children(): w.destroy()
@@ -1771,6 +1850,9 @@ class WoodToolsApp:
         df = self.df_original.copy()
         if self.entry_nombre.get(): df = df[df['Cliente'].str.lower().str.contains(self.entry_nombre.get().lower(), na=False)]
         if self.combo_zona.get() != "Todas": df = df[df['Zona'] == self.combo_zona.get()]
+        herr = self.combo_herramientas.get()
+        if herr and herr not in ("Todos", "Todas") and 'Fav_Temp' in df.columns:
+            df = df[df['Fav_Temp'].astype(str).str.lower().str.contains(herr.lower(), na=False)]
         self.df_filtrado = df; self.actualizar_tabla(); self._limpiar_panel_telefonos()
 
     def limpiar_filtros(self): self.entry_nombre.delete(0, tk.END); self.combo_zona.current(0); self.aplicar_filtros()
@@ -1870,14 +1952,15 @@ class WoodToolsApp:
             if not os.path.exists(carpeta_reportes): os.makedirs(carpeta_reportes)
             ruta_final = os.path.join(carpeta_reportes, f"Reporte_Campanas_Detallado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
             
-            writer = pd.ExcelWriter(ruta_final, engine='xlsxwriter')
+            writer = pd.ExcelWriter(ruta_final, engine='openpyxl')
             df_final.to_excel(writer, index=False, sheet_name='Log_Campañas')
             
-            workbook  = writer.book
+            from openpyxl.styles import Font
             worksheet = writer.sheets['Log_Campañas']
             
-            worksheet.set_column('A:A', 30)
-            worksheet.set_column('B:G', 25)
+            worksheet.column_dimensions['A'].width = 30
+            for _c in 'BCDEFG':
+                worksheet.column_dimensions[_c].width = 25
             
             ruta_logo = obtener_ruta_interna(r"Imagenes\logo.png")
             if not os.path.exists(ruta_logo): 
@@ -1887,9 +1970,16 @@ class WoodToolsApp:
                 max_row = len(df_final) + 1 
                 fecha_hora_actual = mainCode.hora_arg().strftime("%Y-%m-%d %H:%M:%S")
                 
-                formato_texto = workbook.add_format({'bold': True, 'font_color': '#a41e22'})
-                worksheet.write(max_row + 2, 0, f"Reporte generado el: {fecha_hora_actual}", formato_texto)
-                worksheet.insert_image(max_row + 4, 0, ruta_logo, {'x_scale': 0.6, 'y_scale': 0.6})
+                celda_rep = worksheet.cell(row=max_row + 3, column=1, value=f"Reporte generado el: {fecha_hora_actual}")
+                celda_rep.font = Font(bold=True, color="FFA41E22")
+                try:
+                    from openpyxl.drawing.image import Image as _XLImage
+                    _logo = _XLImage(ruta_logo)
+                    _logo.width = int(_logo.width * 0.6)
+                    _logo.height = int(_logo.height * 0.6)
+                    worksheet.add_image(_logo, f"A{max_row + 5}")
+                except Exception as _e_logo:
+                    mainCode.log_error(f"No se pudo insertar el logo en el reporte: {_e_logo}")
             
             writer.close()
             
@@ -1912,10 +2002,17 @@ class WoodToolsApp:
         tipo = self.tipo_mensaje_var.get()
         tipos_con_imagen = ["Promociones", "Rescate (Te extrañamos)", "Novedades", "Personalizado"]
 
+        es_video = (self.media_tipo_var.get() == "video")
+
         if tipo in tipos_con_imagen:
-            if not self.ruta_imagen_seleccionada: 
-                return messagebox.showerror("Error", "¡La imagen es OBLIGATORIA para esta plantilla de Meta! Por favor adjuntá una foto antes de enviar.")
-        
+            if not self.ruta_imagen_seleccionada:
+                que = "un video" if es_video else "una foto"
+                return messagebox.showerror("Error", f"¡El archivo es OBLIGATORIO para esta plantilla de Meta! Por favor adjuntá {que} antes de enviar.")
+            if es_video:
+                if not messagebox.askyesno("Enviar con video",
+                        "Vas a enviar con VIDEO. Requiere que la plantilla de video de esta campaña ya esté aprobada en Meta.\n\n¿Continuar?"):
+                    return
+
         sel = self.combo_vendedor.get()
         params = {}
         if "AUTOMÁTICO" in sel:
@@ -1928,7 +2025,8 @@ class WoodToolsApp:
             params['tel_fijo'] = nums[0] if nums else "5491145394279"
 
         if self.ruta_imagen_seleccionada: params['ruta_imagen'] = self.ruta_imagen_seleccionada
-        
+        params['es_video'] = es_video
+
         if tipo == "Promociones":
             if not self.entry_dinamico_texto.get().strip(): return messagebox.showerror("Error", "Falta ingresar el producto a promocionar.")
             params['herramienta'] = self.entry_dinamico_texto.get().strip()
@@ -1959,21 +2057,34 @@ class WoodToolsApp:
         self.btn_enviar.config(state="disabled")
         self.btn_cancelar.config(state="normal", text="🛑 CANCELAR ENVÍO")
         
-        threading.Thread(target=self._proceso_envio, args=(tipo, params, df_ok, total_base)).start()
+        threading.Thread(target=self._proceso_envio_seguro, args=(tipo, params, df_ok, total_base), daemon=True).start()
+
+    def _proceso_envio_seguro(self, tipo, params, df, total_base):
+        # Envoltura: pase lo que pase, rehabilita los botones al terminar el hilo.
+        # (Antes, si _proceso_envio lanzaba una excepción, el botón ENVIAR quedaba
+        # deshabilitado para siempre y había que reiniciar la app.)
+        try:
+            self._proceso_envio(tipo, params, df, total_base)
+        except Exception as e:
+            mainCode.log_error(f"Error crítico en _proceso_envio: {e}")
+            self.root.after(0, lambda m=str(e): messagebox.showerror("Error", f"Ocurrió un error durante el envío:\n{m}"))
+        finally:
+            self.root.after(0, lambda: self.btn_enviar.config(state="normal"))
+            self.root.after(0, lambda: self.btn_cancelar.config(state="disabled", text="🛑 CANCELAR ENVÍO"))
 
     def _proceso_envio(self, tipo, params, df, total_base):
         media_id = None
         if params.get('ruta_imagen'):
-            self.lbl_progreso.config(text="Subiendo imagen a Meta...", fg="blue", bg=COLOR_PANELES) 
-            media_id = mainCode.subir_imagen_whatsapp(params['ruta_imagen'])
-            if not media_id: 
-                self.root.after(0, lambda: self.btn_enviar.config(state="normal"))
-                self.root.after(0, lambda: self.btn_cancelar.config(state="disabled"))
-                return messagebox.showerror("Error", "Fallo subida imagen a Meta. La imagen no debe superar los 5MB o el formato es incorrecto.")
+            self.root.after(0, lambda: self.lbl_progreso.config(text="Subiendo archivo a Meta...", fg="blue", bg=COLOR_PANELES))
+            media_id = mainCode.subir_media_whatsapp(params['ruta_imagen'])
+            if not media_id:
+                self.root.after(0, lambda: messagebox.showerror("Error", "Falló la subida del archivo a Meta. La imagen no debe superar 5 MB (o el video 16 MB) y el formato debe ser válido (jpg, png, mp4)."))
+                return
 
+        es_video = params.get('es_video', False)
         id_tanda_actual = mainCode.hora_arg().strftime("TANDA_%Y%m%d_%H%M%S")
         tot = len(df); ok = 0; err = 0; hubo_error_servidor = False; hubo_error_cliente = False
-        
+
         numeros_ya_enviados = set()
         
         for i, (_, row) in enumerate(df.iterrows()):
@@ -2019,15 +2130,15 @@ class WoodToolsApp:
                 tel_limpio_10 = ''.join(filter(str.isdigit, str(t)))[-10:]
                 link = f"{URL_SERVIDOR_RENDER}/wa/{id_tanda_actual}/{tel_limpio_10}/{tel_para_link}?text={urllib.parse.quote(texto_param)}"
                 
-                if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params.get('herramienta', 'sierras circulares'), link, media_id)
-                elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link, media_id)
-                elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), link, media_id)
+                if tipo == "Promociones": res, tipo_error = mainCode.enviar_promocion(t, row['Cliente'], params.get('herramienta', 'sierras circulares'), link, media_id, es_video)
+                elif tipo == "Novedades": res, tipo_error = mainCode.enviar_novedades(t, params['subtipo_novedad'], params['herramienta_novedad'], link, media_id, es_video)
+                elif tipo == "Rescate (Te extrañamos)": res, tipo_error = mainCode.enviar_rescate(t, row['Cliente'], row.get('Fav_Temp','-'), link, media_id, es_video)
                 elif tipo == "Gira Vendedor": res, tipo_error = mainCode.enviar_gira(t, params.get('texto_extra','Vendedor'), link)
                 elif tipo == "Recotización": res, tipo_error = mainCode.enviar_recotizacion(t, link)
-                elif tipo == "Personalizado": 
+                elif tipo == "Personalizado":
                     txt_base = params.get('texto_extra','')
                     caption_final = txt_base.replace("[CLIENTE]", row['Cliente'])
-                    res, tipo_error = mainCode.enviar_personalizado(t, caption_final, link, media_id)
+                    res, tipo_error = mainCode.enviar_personalizado(t, caption_final, link, media_id, es_video)
 
                 if res: ok += 1; estado_individual = "ENVIADO CORRECTAMENTE"
                 else: 
@@ -2035,7 +2146,14 @@ class WoodToolsApp:
                     if tipo_error == "ERROR DEL CLIENTE": hubo_error_cliente = True
                     else: hubo_error_servidor = True
                 
-                herramienta_usada = row.get('Fav_Temp', '-') if tipo == "Recotización" else params.get('herramienta_novedad', '-')
+                if tipo == "Recotización":
+                    herramienta_usada = row.get('Fav_Temp', '-')
+                elif tipo == "Novedades":
+                    herramienta_usada = params.get('herramienta_novedad', '-')
+                elif tipo == "Promociones":
+                    herramienta_usada = params.get('herramienta', '-')
+                else:
+                    herramienta_usada = '-'
                 mainCode.registrar_envio_db(id_tanda_actual, row['Cliente'], t, tel_v, tipo, herramienta_usada, estado_individual, total_base)
                 time.sleep(1)
 
@@ -2123,7 +2241,7 @@ class WoodToolsApp:
                 return
 
             for t in tandas:
-                estado_crudo = t.get('estado_tanda', 'ERROR')
+                estado_crudo = t.get('estado_tanda') or 'ERROR'
                 if "EXITO" in estado_crudo.upper() or "OK" in estado_crudo.upper(): icono_estado = "🟢 OK"
                 elif "CANCELADA" in estado_crudo.upper() or "ABORTADA" in estado_crudo.upper(): icono_estado = "🔴 CANC."
                 else: icono_estado = "🔴 ERR."

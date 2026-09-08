@@ -33,7 +33,12 @@ def migrar_datos():
         tanda_id = str(row.get('tanda_id', f'TANDA_MIGRADA_{index}'))
         fecha_hora = str(row.get('fecha_hora', '2025-01-01 12:00:00'))
         cliente = str(row.get('cliente', 'Cliente Desconocido'))
-        telefono = str(row.get('telefono', '0'))
+        # Si pandas leyó el teléfono como número (float), evitamos el sufijo ".0"
+        _tel_raw = row.get('telefono', '0')
+        try:
+            telefono = str(int(float(_tel_raw))) if pd.notna(_tel_raw) and str(_tel_raw).strip() != '' else '0'
+        except (ValueError, TypeError):
+            telefono = str(_tel_raw)
         vendedor_asignado = str(row.get('vendedor_asignado', '0'))
         tipo_campana = str(row.get('tipo_campana', 'Migración Neon'))
         herramienta = str(row.get('herramienta', '-'))
