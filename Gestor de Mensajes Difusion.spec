@@ -1,12 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+# Empaquetamos el ffmpeg de imageio-ffmpeg (trae libx264) para comprimir videos a <=16 MB.
+import imageio_ffmpeg as _iio
+_ffmpeg_bin = _iio.get_ffmpeg_exe()
 
 a = Analysis(
     ['interfaz.py'],
     pathex=[],
-    binaries=[],
+    binaries=[(_ffmpeg_bin, 'imageio_ffmpeg/binaries')],
     datas=[('Imagenes', 'Imagenes'), ('credenciales.json', '.')],
-    hiddenimports=['pandas', 'gspread', 'oauth2client', 'google_auth_oauthlib', 'PIL', 'openpyxl'],
+    hiddenimports=['pandas', 'gspread', 'oauth2client', 'google_auth_oauthlib', 'PIL', 'openpyxl', 'imageio_ffmpeg'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

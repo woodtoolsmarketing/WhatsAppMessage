@@ -7,6 +7,7 @@ import sqlite3
 import re
 import time
 import mimetypes
+import subprocess
 from datetime import datetime, timedelta
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -26,7 +27,7 @@ BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 
 # Versión de esta app y repo público desde donde se descargan las actualizaciones
-VERSION_APP = "12.5"
+VERSION_APP = "12.6"
 GITHUB_REPO = "woodtoolsmarketing/WhatsAppMessage"
 
 NOMBRE_HOJA = "Base de datos wt"
@@ -605,6 +606,80 @@ def subir_media_whatsapp(ruta):
 def subir_imagen_whatsapp(ruta):
     # Compatibilidad: delega en subir_media_whatsapp (soporta imagen y video).
     return subir_media_whatsapp(ruta)
+
+# ==========================================
+# COMPRESIÓN DE VIDEO (para respetar el límite de 16 MB de la Cloud API)
+# ==========================================
+# En Windows, evita que se abra una ventana de consola al llamar a ffmpeg desde el .exe.
+_SIN_VENTANA = 0x08000000 if os.name == "nt" else 0
+
+def _ruta_ffmpeg():
+    """Ruta al ffmpeg empaquetado (imageio-ffmpeg, que trae libx264). None si no está."""
+    # 1) En el .exe (PyInstaller): buscar el binario en la carpeta empaquetada.
+    try:
+        if getattr(sys, 'frozen', False):
+            import glob
+            base = os.path.join(sys._MEIPASS, 'imageio_ffmpeg', 'binaries')
+            cands = glob.glob(os.path.join(base, 'ffmpeg-*'))
+            if cands:
+                return cands[0]
+    except Exception:
+        pass
+    # 2) En desarrollo (o si el paso 1 no lo encontró): via el paquete.
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception as e:
+        log_error(f"ffmpeg no disponible para comprimir video: {e}")
+        return None
+
+def _duracion_video(ffmpeg, ruta):
+    """Duración en segundos, parseando la salida de 'ffmpeg -i'."""
+    try:
+        p = subprocess.run([ffmpeg, "-i", ruta], capture_output=True, text=True,
+                           creationflags=_SIN_VENTANA)
+        salida = (p.stderr or "") + (p.stdout or "")
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", salida)
+        if not m:
+            return None
+        return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:
+        return None
+
+def comprimir_video(ruta, limite_mb=16):
+    """Si el video supera limite_mb, lo recomprime (H.264 + AAC) para que quede por debajo
+    y devuelve la ruta del archivo comprimido (en la carpeta temporal). Si ya está por debajo
+    o no se puede comprimir, devuelve la ruta original."""
+    try:
+        tam_mb = os.path.getsize(ruta) / (1024 * 1024)
+    except Exception:
+        return ruta
+    if tam_mb <= limite_mb:
+        return ruta
+    ffmpeg = _ruta_ffmpeg()
+    if not ffmpeg:
+        return ruta  # sin ffmpeg no hay nada que hacer; Meta lo rechazará con aviso claro
+    try:
+        import tempfile
+        dur = _duracion_video(ffmpeg, ruta) or 60.0
+        objetivo_mb = max(3, limite_mb - 2)  # margen de seguridad bajo el límite
+        total_kbps = (objetivo_mb * 8 * 1024) / dur
+        video_kbps = int(max(300, total_kbps - 128))  # 128 kbps para el audio
+        salida = os.path.join(tempfile.gettempdir(), "wt_video_comprimido.mp4")
+        cmd = [ffmpeg, "-y", "-i", ruta,
+               "-c:v", "libx264", "-preset", "veryfast",
+               "-b:v", f"{video_kbps}k",
+               "-maxrate", f"{int(video_kbps * 1.3)}k",
+               "-bufsize", f"{int(video_kbps * 2)}k",
+               "-c:a", "aac", "-b:a", "128k",
+               "-movflags", "+faststart", salida]
+        subprocess.run(cmd, capture_output=True, creationflags=_SIN_VENTANA, timeout=600)
+        if os.path.exists(salida) and os.path.getsize(salida) > 0:
+            return salida
+        return ruta
+    except Exception as e:
+        log_error(f"Error comprimiendo video: {e}")
+        return ruta
 
 # ==========================================
 # MAGIA DE BOTONES: EXTRACTOR DE ENLACE DINÁMICO

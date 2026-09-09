@@ -1597,16 +1597,67 @@ class WoodToolsApp:
         es_vid = self.media_tipo_var.get() == "video"
         self.btn_subir_imagen.config(text="📂 Adjuntar Video (Obligatorio)" if es_vid else "📂 Adjuntar Imagen (Obligatoria)")
 
+    LIMITE_VIDEO_MB = 16  # límite de la Cloud API de WhatsApp para videos
+
     def seleccionar_imagen(self):
         if self.media_tipo_var.get() == "video":
             ruta = filedialog.askopenfilename(filetypes=[("Video", "*.mp4 *.3gp")])
+            if ruta:
+                self._preparar_video(ruta)
         else:
             ruta = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
-        if ruta:
-            self.ruta_imagen_seleccionada = ruta
-            self.lbl_nombre_imagen.config(text="OK", fg="green")
-            self.btn_quitar_imagen.pack(anchor="w")
-            self._mostrar_preview_imagen()
+            if ruta:
+                self._set_media_listo(ruta)
+
+    def _set_media_listo(self, ruta, etiqueta="OK"):
+        self.ruta_imagen_seleccionada = ruta
+        self.lbl_nombre_imagen.config(text=etiqueta, fg="green")
+        self.btn_quitar_imagen.pack(anchor="w")
+        self._mostrar_preview_imagen()
+
+    def _preparar_video(self, ruta):
+        """Si el video pesa más que el límite, lo comprime (con barra de progreso) antes de dejarlo listo."""
+        try:
+            tam = os.path.getsize(ruta) / (1024 * 1024)
+        except Exception:
+            tam = 0
+        if tam <= self.LIMITE_VIDEO_MB:
+            self._set_media_listo(ruta, etiqueta=f"OK ({tam:.1f} MB)")
+            return
+
+        vent = tk.Toplevel(self.root)
+        vent.title("Comprimiendo video")
+        vent.geometry("400x130")
+        vent.configure(bg="white")
+        vent.transient(self.root)
+        vent.resizable(False, False)
+        tk.Label(vent, text=f"El video pesa {tam:.1f} MB (máx {self.LIMITE_VIDEO_MB} MB).\n"
+                            "Comprimiéndolo automáticamente, esperá unos segundos...",
+                 bg="white", font=("Segoe UI", 10), justify="center").pack(pady=(18, 8))
+        barra = ttk.Progressbar(vent, mode="indeterminate", length=340)
+        barra.pack(pady=6)
+        barra.start(12)
+
+        def tarea():
+            salida = mainCode.comprimir_video(ruta, limite_mb=self.LIMITE_VIDEO_MB)
+            try:
+                nuevo = os.path.getsize(salida) / (1024 * 1024)
+            except Exception:
+                nuevo = tam
+            self.root.after(0, lambda: self._fin_compresion(vent, salida, nuevo, tam))
+
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _fin_compresion(self, vent, salida, nuevo_mb, tam_original):
+        try: vent.destroy()
+        except Exception: pass
+        self._set_media_listo(salida, etiqueta=f"OK ({nuevo_mb:.1f} MB)")
+        if nuevo_mb > self.LIMITE_VIDEO_MB:
+            messagebox.showwarning("Video muy pesado",
+                f"No se pudo bajar el video por debajo de {self.LIMITE_VIDEO_MB} MB "
+                f"(quedó en {nuevo_mb:.1f} MB). Probá con un video más corto o de menor resolución.")
+        elif salida != None and nuevo_mb < tam_original:
+            messagebox.showinfo("Video listo", f"Se comprimió el video de {tam_original:.1f} MB a {nuevo_mb:.1f} MB.")
 
     def quitar_imagen(self):
         self.ruta_imagen_seleccionada = None
