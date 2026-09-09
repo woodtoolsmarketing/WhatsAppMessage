@@ -95,7 +95,10 @@ class WoodToolsApp:
         
         btn_derivados = tk.Button(frame_top, text="💬 Chats Pendientes", command=self.abrir_chats_derivados, bg="#9C27B0", fg="white", font=("Segoe UI", 10, "bold"))
         btn_derivados.pack(side=tk.LEFT, padx=10)
-        
+
+        btn_contactos = tk.Button(frame_top, text="📇 Exportar Contactos", command=self.exportar_contactos, bg="#607D8B", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_contactos.pack(side=tk.LEFT, padx=10)
+
         self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
         self.lbl_status_db.pack(side=tk.LEFT, padx=10)
 
@@ -2291,6 +2294,48 @@ class WoodToolsApp:
         df.to_excel(ruta_final, index=False)
         os.startfile(carpeta_reportes)
         messagebox.showinfo("Éxito", f"Resumen global exportado en:\n{ruta_final}")
+
+    def exportar_contactos(self):
+        """Descarga del servidor la lista de TODOS los contactos que escribieron al bot y la
+        guarda como CSV (o Excel). La red va en un thread para no congelar la interfaz."""
+        def tarea():
+            try:
+                res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/contactos", timeout=60)
+                if res.status_code == 200:
+                    datos = res.json()
+                    self.root.after(0, lambda: self._guardar_contactos_archivo(datos))
+                else:
+                    self.root.after(0, lambda c=res.status_code: messagebox.showerror(
+                        "Error", f"El servidor respondió con código {c}."))
+            except Exception as e:
+                self.root.after(0, lambda m=str(e): messagebox.showerror(
+                    "Error de Conexión", f"No se pudo conectar con el servidor.\n{m}"))
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _guardar_contactos_archivo(self, datos):
+        """Corre en el hilo de la UI (vía root.after): pide dónde guardar y escribe el archivo."""
+        if not datos:
+            messagebox.showinfo("Aviso", "No hay contactos para exportar todavía.")
+            return
+        df = pd.DataFrame(datos)
+        renombrar = {"telefono": "Teléfono", "primer_contacto": "Primer contacto",
+                     "ultimo_contacto": "Último contacto", "mensajes": "Cantidad de mensajes"}
+        df = df.rename(columns={k: v for k, v in renombrar.items() if k in df.columns})
+        ruta = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx")],
+            title="Guardar contactos",
+            initialfile=f"Contactos_WoodTools_{datetime.now().strftime('%Y%m%d')}.csv")
+        if not ruta:
+            return
+        try:
+            if ruta.lower().endswith(".xlsx"):
+                df.to_excel(ruta, index=False)
+            else:
+                df.to_csv(ruta, index=False, encoding="utf-8-sig")
+            messagebox.showinfo("Éxito", f"Se exportaron {len(df)} contactos en:\n{ruta}")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo guardar el archivo:\n{e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
