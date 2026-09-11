@@ -1987,6 +1987,11 @@ class WoodToolsApp:
                 elif estado_nube == 'responded': estado_final = "Respondido por el cliente 💬"
                 elif estado_nube == 'read': estado_final = "Leído (Doble tilde azul) 🟦"
                 elif estado_nube == 'delivered': estado_final = "Entregado (Doble tilde gris) ⬜"
+                elif isinstance(estado_nube, str) and estado_nube.startswith('failed'):
+                    # "failed|131026|Message undeliverable" -> el motivo real por el que Meta NO lo entregó
+                    partes = estado_nube.split('|')
+                    motivo = (partes[2] if len(partes) > 2 and partes[2] else (partes[1] if len(partes) > 1 else '')).strip()
+                    estado_final = f"NO entregado ❌ ({motivo})" if motivo else "NO entregado ❌"
                 else: estado_final = estado_local 
 
                 datos_para_excel.append({
@@ -2138,6 +2143,7 @@ class WoodToolsApp:
         es_video = params.get('es_video', False)
         id_tanda_actual = mainCode.hora_arg().strftime("TANDA_%Y%m%d_%H%M%S")
         tot = len(df); ok = 0; err = 0; hubo_error_servidor = False; hubo_error_cliente = False
+        frenado_por_limite = False  # Meta frenó la cuenta por el tope diario (131056)
 
         numeros_ya_enviados = set()
         
@@ -2195,10 +2201,14 @@ class WoodToolsApp:
                     res, tipo_error = mainCode.enviar_personalizado(t, caption_final, link, media_id, es_video)
 
                 if res: ok += 1; estado_individual = "ENVIADO CORRECTAMENTE"
-                else: 
-                    err += 1; estado_individual = tipo_error
-                    if tipo_error == "ERROR DEL CLIENTE": hubo_error_cliente = True
-                    else: hubo_error_servidor = True
+                else:
+                    err += 1; estado_individual = tipo_error  # ahora trae el código de error de Meta
+                    if mainCode.es_error_de_servidor(tipo_error): hubo_error_servidor = True
+                    else: hubo_error_cliente = True
+                    if mainCode.debe_frenar_campana(tipo_error):
+                        # Meta frenó la cuenta por el tope diario: seguir sería quemar el resto de la base.
+                        frenado_por_limite = True
+                        self.cancelar_envio = True
                 
                 if tipo == "Recotización":
                     herramienta_usada = row.get('Fav_Temp', '-')
@@ -2211,7 +2221,8 @@ class WoodToolsApp:
                 mainCode.registrar_envio_db(id_tanda_actual, row['Cliente'], t, tel_v, tipo, herramienta_usada, estado_individual, total_base)
                 time.sleep(1)
 
-        if self.cancelar_envio: estado_final_tanda = "CAMPAÑA CANCELADA"
+        if frenado_por_limite: estado_final_tanda = "FRENADA: LÍMITE 24H DE META"
+        elif self.cancelar_envio: estado_final_tanda = "CAMPAÑA CANCELADA"
         elif hubo_error_servidor: estado_final_tanda = "ERROR DEL SERVIDOR"
         elif hubo_error_cliente: estado_final_tanda = "ERROR DEL CLIENTE"
         else: estado_final_tanda = "ENVIADO CON EXITO"
@@ -2222,10 +2233,19 @@ class WoodToolsApp:
         
         if self.cancelar_envio:
             self.root.after(0, lambda: self.lbl_progreso.config(text="Envío Cancelado", fg="red", bg=COLOR_PANELES))
-            self.root.after(0, lambda: messagebox.showwarning("Proceso Detenido", f"La campaña fue frenada.\n\nEnviados con éxito: {ok}\nErrores: {err}"))
+            self.root.after(0, lambda: messagebox.showwarning("Proceso Detenido",
+                (f"⛔ Meta frenó la cuenta por el TOPE DIARIO de mensajes (error 131056).\n"
+                 f"Se cortó la campaña para no quemar el resto de la base. Reanudá mañana o pedí subir el tope en Meta.\n\n"
+                 if frenado_por_limite else "La campaña fue frenada.\n\n")
+                + f"Aceptados por Meta: {ok}\nRechazados: {err}"))
         else:
             self.root.after(0, lambda: self.lbl_progreso.config(text="Campaña completada", fg="green", bg=COLOR_PANELES))
-            self.root.after(0, lambda: messagebox.showinfo("Reporte Final", f"Campaña Finalizada.\n\nEnviados con éxito: {ok}\nErrores: {err}\n\nQuedó registrada en el historial como: {estado_final_tanda}"))
+            self.root.after(0, lambda: messagebox.showinfo("Reporte Final",
+                f"Campaña Finalizada.\n\nAceptados por Meta: {ok}\nRechazados: {err}\n\n"
+                f"⚠️ 'Aceptado' NO es 'entregado': Meta después descarta los números que no están en WhatsApp.\n"
+                f"Para ver cuántos se ENTREGARON de verdad, abrí Reportes → Rendimiento en unos minutos "
+                f"(columna 'No entreg.') o exportá el reporte, que muestra el motivo por número.\n\n"
+                f"Historial: {estado_final_tanda}"))
 
     def abrir_rendimiento(self):
         vent_rendimiento = tk.Toplevel(self.root)
@@ -2247,10 +2267,10 @@ class WoodToolsApp:
         frame_tabla = tk.Frame(vent_rendimiento)
         frame_tabla.pack(fill="both", expand=True, padx=20, pady=10)
         
-        columnas = ("Estado", "Fecha", "Campaña", "Base (Total)", "Intentos (PC)", "Entregados (Nube)", "Leídos", "Rtas (Bot)", "Deriv. (Vend.)", "Tasa Deriv.")
+        columnas = ("Estado", "Fecha", "Campaña", "Base (Total)", "Intentos (PC)", "Entregados (Nube)", "Leídos", "Rtas (Bot)", "Deriv. (Vend.)", "Tasa Deriv.", "No entreg.")
         tree_rendimiento = ttk.Treeview(frame_tabla, columns=columnas, show="headings", height=15)
-        
-        anchos = [80, 90, 180, 90, 90, 110, 70, 80, 100, 90]
+
+        anchos = [80, 90, 180, 90, 90, 110, 70, 80, 100, 90, 85]
         for col, ancho in zip(columnas, anchos):
             tree_rendimiento.heading(col, text=col)
             tree_rendimiento.column(col, width=ancho, anchor="center")
@@ -2287,11 +2307,11 @@ class WoodToolsApp:
                 
                 tree_rendimiento.insert("", "end", values=(
                     "🌱 ORGÁNICO", "-", "Chats Orgánicos", "-", "-", 
-                    iniciados, "-", iniciados, derivados, tasa_org
+                    iniciados, "-", iniciados, derivados, tasa_org, "-"
                 ), tags=("organico",))
 
             if not tandas and not "ORGANICO" in datos_nube:
-                tree_rendimiento.insert("", "end", values=("---", "---", "Todavía no hay campañas registradas", "---", "---", "---", "---", "---", "---", "---"))
+                tree_rendimiento.insert("", "end", values=("---", "---", "Todavía no hay campañas registradas", "---", "---", "---", "---", "---", "---", "---", "---"))
                 return
 
             for t in tandas:
@@ -2311,13 +2331,14 @@ class WoodToolsApp:
                 leidos_reales = metricas_campana.get("leidos", 0)
                 clics_reales = metricas_campana.get("respondidos", 0)
                 derivados_reales = metricas_campana.get("derivados", 0)
-                
+                fallidos_reales = metricas_campana.get("fallidos", 0)  # los que Meta NO pudo entregar
+
                 tasa_deriv = f"{(derivados_reales / entregados_reales * 100):.1f}%" if entregados_reales > 0 else "0%"
                 
                 tree_rendimiento.insert("", "end", values=(
                     icono_estado, fecha, nombre, total_base, intentos_locales, 
                     entregados_reales, leidos_reales, 
-                    clics_reales, derivados_reales, tasa_deriv
+                    clics_reales, derivados_reales, tasa_deriv, fallidos_reales
                 ))
 
         cargar_datos_rendimiento()
@@ -2334,7 +2355,8 @@ class WoodToolsApp:
             datos.append({
                 "Estado": valores[0], "Fecha": valores[1], "Campaña": valores[2],
                 "Base (Total)": valores[3], "Intentos (PC)": valores[4], "Entregados (Nube)": valores[5],
-                "Leídos": valores[6], "Respuestas al Bot": valores[7], "Derivados al Vendedor": valores[8], "Tasa de Derivación": valores[9]
+                "Leídos": valores[6], "Respuestas al Bot": valores[7], "Derivados al Vendedor": valores[8], "Tasa de Derivación": valores[9],
+                "No entregados": (valores[10] if len(valores) > 10 else "")
             })
             
         df = pd.DataFrame(datos)

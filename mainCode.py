@@ -27,7 +27,7 @@ BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 
 # Versión de esta app y repo público desde donde se descargan las actualizaciones
-VERSION_APP = "12.6"
+VERSION_APP = "12.7"
 GITHUB_REPO = "woodtoolsmarketing/WhatsAppMessage"
 
 NOMBRE_HOJA = "Base de datos wt"
@@ -297,7 +297,10 @@ def formatear_telefono(numero_raw):
 def validar_formato_numero(numero_raw):
     numero_fmt = formatear_telefono(numero_raw)
     if not numero_fmt: return False, ""
-    if re.match(r'^549\d{10}$', numero_fmt): return True, numero_fmt
+    # 549 + código de área + número. Los códigos de área argentinos empiezan con 1, 2 o 3
+    # (11, 2xx, 3xx): así se rechazan números imposibles como "5499..." que antes pasaban la
+    # validación y Meta devolvía como "no entregable".
+    if re.match(r'^549[123]\d{9}$', numero_fmt): return True, numero_fmt
     return False, numero_fmt
 
 # ==========================================
@@ -518,6 +521,37 @@ def revisar_numeros_problematicos():
 
 def identificar_cols_productos(df): return ['Sierras', 'Cuchillas', 'Mechas', 'Fresas', 'Cabezales']
 
+# Antes TODO error 4xx era "ERROR DEL CLIENTE": no se podía saber si el número no existía,
+# si Meta nos frenó por el tope diario, si la plantilla estaba pausada, etc.
+LIMITE_24H = "LÍMITE 24H DE META"
+
+def _clasificar_error_meta(res):
+    """Convierte la respuesta 4xx de Meta en un estado legible que incluye el código de error."""
+    try:
+        err = (res.json() or {}).get("error", {}) or {}
+    except Exception:
+        err = {}
+    code = err.get("code")
+    msg = str(err.get("message") or err.get("error_user_msg") or "")[:80]
+    if code == 131056: return f"{LIMITE_24H} (131056)"                       # tope de conversaciones/24h
+    if code in (130429, 131048): return f"RATE LIMIT ({code})"               # demasiados msgs por segundo
+    if code == 131026: return "NO ENTREGABLE: número no está en WhatsApp (131026)"
+    if code == 131047: return "FUERA DE VENTANA 24H (131047)"
+    if code == 131049: return "BLOQUEADO POR META: tope de marketing al usuario (131049)"
+    if code in (131009, 100): return f"NÚMERO/PARÁMETRO INVÁLIDO ({code}) {msg}"
+    if code in (132000, 132001, 132012, 132015, 132016): return f"PLANTILLA: {msg} ({code})"
+    if code in (131031, 131042): return f"CUENTA/PAGO: {msg} ({code})"
+    return f"ERROR DEL CLIENTE ({code}) {msg}" if code else "ERROR DEL CLIENTE"
+
+def debe_frenar_campana(tipo_error):
+    """True si seguir enviando es inútil: Meta frenó la cuenta por el tope diario."""
+    return isinstance(tipo_error, str) and tipo_error.startswith(LIMITE_24H)
+
+def es_error_de_servidor(tipo_error):
+    """Errores de red/servidor/rate-limit (transitorios) vs. rechazos del cliente (definitivos)."""
+    t = str(tipo_error or "")
+    return t in ("ERROR DEL SERVIDOR", "TIMEOUT", "ERROR DE RED O SERVIDOR", "ERROR DESCONOCIDO") or t.startswith("RATE LIMIT")
+
 def _enviar_request(data, reintentos=2):
     """VERSIÓN ANTI-CONGELAMIENTO: registra errores sin colapsar la app.
     Reintenta ante rate-limit (429) y errores de servidor (5xx) con espera creciente."""
@@ -547,7 +581,12 @@ def _enviar_request(data, reintentos=2):
 
             if 400 <= res.status_code < 500:
                 log_error(f"META RECHAZÓ EL MENSAJE (Error {res.status_code}): {res.text}")
-                return False, "ERROR DEL CLIENTE"
+                estado = _clasificar_error_meta(res)
+                # Rate limit de throughput (130429/131048): sí vale la pena reintentar.
+                if estado.startswith("RATE LIMIT") and intento < reintentos:
+                    time.sleep(5 * (intento + 1))
+                    continue
+                return False, estado
 
             log_error(f"Respuesta inesperada de Meta ({res.status_code}): {res.text}")
             return False, f"ERROR {res.status_code}"
