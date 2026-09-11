@@ -1446,55 +1446,82 @@ class WoodToolsApp:
     def verificar_observados(self):
         if self.df_filtrado.empty:
             return messagebox.showinfo("Aviso", "✅ No hay datos cargados.")
-            
+
         df_descartados = self.df_filtrado[self.df_filtrado['Es_Valido'] == False]
-        if df_descartados.empty:
-            return messagebox.showinfo("Aviso", "✅ No hay números descartados en la lista actual filtrada.")
-            
-        msg = f"--- {len(df_descartados)} DESCARTADOS (En este filtro) ---\n\n"
-        for _, row in df_descartados.iterrows():
+        # Rows con número recuperado por variantes (informativo: se salvaron de ser descartados).
+        recuperados_rows = [r for _, r in self.df_filtrado.iterrows() if r.get('Telefonos_Recuperados')]
+
+        if df_descartados.empty and not recuperados_rows:
+            return messagebox.showinfo("Aviso", "✅ No hay números rechazados ni recuperados en este filtro.")
+
+        # Separamos: rechazados POR SU NÚMERO (para contactar) vs lista negra (revendedores).
+        por_numero = [r for _, r in df_descartados.iterrows() if not r.get('Es_Revendedor')]
+        lista_negra = [r for _, r in df_descartados.iterrows() if r.get('Es_Revendedor')]
+
+        msg = f"--- {len(por_numero)} RECHAZADOS POR SU NÚMERO (para contactar) ---\n"
+        msg += "(ya se probaron todas las variantes del número y ninguna es válida)\n\n"
+        for row in por_numero:
             tels = row.get('Telefonos_Raw', [])
             cod = row.get('Código de cliente', '')
             texto_cod = f"[{cod}] " if cod else ""
-            es_rev = " [LISTA NEGRA]" if row.get('Es_Revendedor') else ""
-            msg += f"• {texto_cod}{row['Cliente']}{es_rev} -> {' | '.join(tels) if tels else 'Sin números'}\n"
-        
+            msg += f"• {texto_cod}{row['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
+        if recuperados_rows:
+            msg += f"\n--- {len(recuperados_rows)} RECUPERADOS (se corrigió el formato, SÍ se envían) ---\n\n"
+            for row in recuperados_rows:
+                for crudo, arreglado in row.get('Telefonos_Recuperados', []):
+                    msg += f"• {row['Cliente']}: {crudo}  →  {arreglado}\n"
+        if lista_negra:
+            msg += f"\n--- {len(lista_negra)} LISTA NEGRA (revendedores, no contactar) ---\n\n"
+            for row in lista_negra:
+                tels = row.get('Telefonos_Raw', [])
+                msg += f"• {row['Cliente']} -> {' | '.join(tels) if tels else 'Sin números'}\n"
+
         vent = tk.Toplevel(self.root)
-        vent.title("Descartados (Filtrados)")
-        vent.geometry("550x450")
+        vent.title("Rechazados por número (para contactar)")
+        vent.geometry("600x480")
         vent.configure(bg=COLOR_PANELES)
-        
-        t = tk.Text(vent, wrap="word", padx=10, pady=10, font=("Arial", 10))
+
+        t = tk.Text(vent, wrap="word", padx=10, pady=10, font=("Consolas", 10))
         t.pack(fill="both", expand=True, padx=10, pady=10)
         t.insert("1.0", msg)
         t.config(state="disabled")
 
         def exportar_descartes_excel():
             datos_export = []
-            for _, row in df_descartados.iterrows():
+            for row in por_numero:
                 tels = row.get('Telefonos_Raw', [])
                 datos_export.append({
                     "Código de cliente": row.get('Código de cliente', ''),
-                    "Nombre": row['Cliente'] + (" [Lista Negra]" if row.get('Es_Revendedor') else ""),
-                    "Número": " | ".join(tels) if tels else "Sin número"
+                    "Cliente": row['Cliente'],
+                    "Número (como vino)": " | ".join(tels) if tels else "Sin número",
+                    "Motivo": "Número inválido (no se recuperó en ninguna variante)",
                 })
-                
+            for row in lista_negra:
+                tels = row.get('Telefonos_Raw', [])
+                datos_export.append({
+                    "Código de cliente": row.get('Código de cliente', ''),
+                    "Cliente": row['Cliente'],
+                    "Número (como vino)": " | ".join(tels) if tels else "Sin número",
+                    "Motivo": "Lista negra (revendedor)",
+                })
+            if not datos_export:
+                return messagebox.showinfo("Exportar", "No hay rechazados para exportar (solo recuperados).", parent=vent)
+
             df_export = pd.DataFrame(datos_export)
             ruta_guardar = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
                 filetypes=[("Excel", "*.xlsx")],
-                title="Guardar Descartes en Excel",
-                initialfile=f"Descartados_WoodTools_{datetime.now().strftime('%Y%m%d')}.xlsx"
+                title="Guardar rechazados para contactar",
+                initialfile=f"Rechazados_para_contactar_WoodTools_{datetime.now().strftime('%Y%m%d')}.xlsx"
             )
-            
             if ruta_guardar:
                 try:
                     df_export.to_excel(ruta_guardar, index=False)
-                    messagebox.showinfo("Éxito", f"Base de descartados exportada perfectamente.\n\nGuardada en:\n{ruta_guardar}", parent=vent)
+                    messagebox.showinfo("Éxito", f"Listado exportado ({len(datos_export)} clientes).\n\nGuardado en:\n{ruta_guardar}", parent=vent)
                 except Exception as e:
                     messagebox.showerror("Error", f"No se pudo guardar el archivo:\n{e}", parent=vent)
 
-        btn_exportar = tk.Button(vent, text="📥 Exportar a Excel", command=exportar_descartes_excel, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_exportar = tk.Button(vent, text="📥 Exportar listado para contactar", command=exportar_descartes_excel, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
         btn_exportar.pack(pady=10)
 
     def actualizar_preview(self, event=None):
@@ -2084,37 +2111,38 @@ class WoodToolsApp:
         vistos = set()
         for _, row in df.iterrows():
             cliente = row.get('Cliente', '')
+            codigo = row.get('Código de cliente', '')
             if row.get('Es_Revendedor'):
                 tels = row.get('Telefonos_Raw', []) or row.get('Telefonos_Invalidos', [])
-                r["lista_negra_items"].append((cliente, " | ".join(tels) if tels else "Sin número"))
+                r["lista_negra_items"].append((codigo, cliente, " | ".join(tels) if tels else "Sin número"))
                 continue
             if row.get('Es_Valido'):
                 for tel in row.get('Telefonos_Validos', []):
                     if tel in vistos:
                         continue
                     vistos.add(tel)
-                    r["validos"].append((cliente, tel))
+                    r["validos"].append((codigo, cliente, tel))
             else:
                 tels = row.get('Telefonos_Invalidos', [])
                 if not tels:
                     tf = row.get('Tel_Formateado', '')
                     tels = [tf] if tf and tf != "Sin número" else []
                 for tel in tels:
-                    r["invalidos_formato"].append((cliente, tel))
+                    r["invalidos_formato"].append((codigo, cliente, tel))
         r["n_destinatarios"] = len(r["validos"])
         r["costo"] = mainCode.calcular_costo_campana(r["n_destinatarios"])
         if entregados is not None or fallidos is not None:
             r["cruzado_nube"] = True
             entregados = entregados or set()
             fallidos = fallidos or {}
-            for cliente, tel in r["validos"]:
+            for codigo, cliente, tel in r["validos"]:
                 k = mainCode.clave_10_digitos(tel)
                 if k in entregados:
-                    r["ok_previos"].append((cliente, tel))
+                    r["ok_previos"].append((codigo, cliente, tel))
                 elif k in fallidos:
-                    r["fallaron_previos"].append((cliente, tel, fallidos.get(k, {})))
+                    r["fallaron_previos"].append((codigo, cliente, tel, fallidos.get(k, {})))
                 else:
-                    r["sin_historial"].append((cliente, tel))
+                    r["sin_historial"].append((codigo, cliente, tel))
             n_pag = r["n_destinatarios"] - len(r["fallaron_previos"])
             r["costo_sin_fallidos"] = mainCode.calcular_costo_campana(n_pag)
         return r
@@ -2170,7 +2198,7 @@ class WoodToolsApp:
                     L.append(f"   → Ahorrás US${ahorro:.2f} si no reenviás a los {len(r['fallaron_previos'])} números muertos.\n")
                 if r["fallaron_previos"]:
                     L.append("\nNúmeros que YA fallaron (conviene no reenviar):\n")
-                    for cliente, tel, info in r["fallaron_previos"][:40]:
+                    for codigo, cliente, tel, info in r["fallaron_previos"][:40]:
                         motivo = info.get("titulo") or info.get("codigo") or "sin motivo"
                         L.append(f"   • {cliente}  {tel}  →  {motivo}\n")
                     if len(r["fallaron_previos"]) > 40:
@@ -2201,13 +2229,13 @@ class WoodToolsApp:
         def exportar_no_funcionan():
             r = estado["resumen"] or self._analizar_base(self.df_filtrado)
             filas = []
-            for cliente, tel in r["invalidos_formato"]:
-                filas.append({"Cliente": cliente, "Número": tel, "Motivo": "Formato inválido"})
-            for cliente, tels in r["lista_negra_items"]:
-                filas.append({"Cliente": cliente, "Número": tels, "Motivo": "Lista negra (revendedor)"})
-            for cliente, tel, info in r.get("fallaron_previos", []):
+            for codigo, cliente, tel in r["invalidos_formato"]:
+                filas.append({"Código de cliente": codigo, "Cliente": cliente, "Número": tel, "Motivo": "Número inválido (ninguna variante sirvió)"})
+            for codigo, cliente, tel, info in r.get("fallaron_previos", []):
                 motivo = info.get("titulo") or info.get("codigo") or "Falló en Meta"
-                filas.append({"Cliente": cliente, "Número": tel, "Motivo": f"Ya falló antes: {motivo}"})
+                filas.append({"Código de cliente": codigo, "Cliente": cliente, "Número": tel, "Motivo": f"No está en WhatsApp / ya falló: {motivo}"})
+            for codigo, cliente, tels in r["lista_negra_items"]:
+                filas.append({"Código de cliente": codigo, "Cliente": cliente, "Número": tels, "Motivo": "Lista negra (revendedor)"})
             if not filas:
                 return messagebox.showinfo("Exportar", "No hay números 'que no funcionan' para exportar en este filtro.", parent=vent)
             ruta = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")],

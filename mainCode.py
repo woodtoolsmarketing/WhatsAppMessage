@@ -27,7 +27,7 @@ BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 
 # Versión de esta app y repo público desde donde se descargan las actualizaciones
-VERSION_APP = "12.8"
+VERSION_APP = "12.9"
 GITHUB_REPO = "woodtoolsmarketing/WhatsAppMessage"
 
 NOMBRE_HOJA = "Base de datos wt"
@@ -303,6 +303,42 @@ def validar_formato_numero(numero_raw):
     if re.match(r'^549[123]\d{9}$', numero_fmt): return True, numero_fmt
     return False, numero_fmt
 
+def generar_variantes_numero(numero_raw):
+    """Reinterpreta los MISMOS dígitos de un número (no inventa ninguno) para darle una segunda
+    oportunidad si a primera vista quedó rechazado: con/sin 0 inicial, con/sin prefijo de país
+    (54/549), tomando los últimos 10 dígitos (por si vino con ruido adelante), etc.
+    Devuelve una lista de candidatos ya pasados por el normalizador."""
+    d = ''.join(filter(str.isdigit, str(numero_raw)))
+    if not d:
+        return []
+    cores = {d}
+    if d.startswith('0'):
+        cores.add(d.lstrip('0'))
+    if d.startswith('549'):
+        cores.add(d[3:])
+    elif d.startswith('54'):
+        cores.add(d[2:])
+    if len(d) > 10:
+        cores.add(d[-10:])          # últimos 10 = área + abonado, sin ruido de prefijos
+    variantes, vistos = [], set()
+    for c in cores:
+        for cand in (formatear_telefono(c), c):
+            if cand and cand not in vistos:
+                vistos.add(cand)
+                variantes.append(cand)
+    return variantes
+
+def recuperar_numero(numero_raw):
+    """Prueba TODAS las variantes de un número. Si alguna es un móvil argentino válido la
+    devuelve (recuperado); si ninguna sirve, se descarta. No fuerza números imposibles: el
+    filtro final sigue siendo validar_formato_numero (549 + área 1/2/3 + 9 dígitos).
+    Retorna (True, numero_valido) o (False, '')."""
+    for v in generar_variantes_numero(numero_raw):
+        ok, fmt = validar_formato_numero(v)
+        if ok:
+            return True, fmt
+    return False, ""
+
 # ==========================================
 # COSTO DE CAMPAÑA + CRUCE CON HISTORIAL REAL DE META
 # ==========================================
@@ -514,15 +550,21 @@ def conectar_y_procesar(nombre_pestana=""):
     
     for registro in datos:
         raw_list = registro.get('Telefonos_Raw', [])
-        validos, invalidos = [], []
-        
+        validos, invalidos, recuperados = [], [], []
+
         for raw_tel in raw_list:
             es_valido, tel_fmt = validar_formato_numero(raw_tel)
             if es_valido:
                 if tel_fmt not in validos:
                     validos.append(tel_fmt)
             else:
-                if raw_tel not in invalidos:
+                # Segunda oportunidad: probar TODAS las variantes de los mismos dígitos.
+                rec_ok, rec_fmt = recuperar_numero(raw_tel)
+                if rec_ok:
+                    if rec_fmt not in validos:
+                        validos.append(rec_fmt)
+                        recuperados.append((raw_tel, rec_fmt))
+                elif raw_tel not in invalidos:
                     invalidos.append(raw_tel)
             
         if registro.get('Es_Revendedor', False):
@@ -538,7 +580,8 @@ def conectar_y_procesar(nombre_pestana=""):
 
         registro['Telefonos_Validos'] = validos
         registro['Telefonos_Invalidos'] = invalidos
-        
+        registro['Telefonos_Recuperados'] = [] if registro.get('Es_Revendedor', False) else recuperados
+
         data_procesada.append(registro)
         if not registro['Es_Valido']: LISTA_OBSERVADOS.append(registro)
         
