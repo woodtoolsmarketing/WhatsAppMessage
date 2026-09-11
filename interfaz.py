@@ -89,6 +89,9 @@ class WoodToolsApp:
         
         btn_verificar = tk.Button(frame_top, text="🔍 Descartes", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
         btn_verificar.pack(side=tk.LEFT, padx=10)
+
+        btn_costo = tk.Button(frame_top, text="💵 Costo & Estado", command=self.abrir_costo_estado, bg="#00897B", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_costo.pack(side=tk.LEFT, padx=10)
         
         btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
         btn_reporte.pack(side=tk.LEFT, padx=10)
@@ -137,6 +140,10 @@ class WoodToolsApp:
         tk.Button(frame_filtros, text="Limpiar", command=self.limpiar_filtros).grid(row=0, column=6, padx=15)
         self.lbl_conteo = tk.Label(frame_filtros, text="Regs: 0", font=("Segoe UI", 10, "bold"), fg="#2196F3", bg=COLOR_PANELES)
         self.lbl_conteo.grid(row=0, column=7, padx=20)
+        # Costo estimado en vivo: cuántos chats válidos hay en el filtro actual y cuánto costaría.
+        self.lbl_costo = tk.Label(frame_filtros, text="Válidos: 0  ·  ≈ US$0.00", font=("Segoe UI", 10, "bold"), fg="#2E7D32", bg=COLOR_PANELES, cursor="hand2")
+        self.lbl_costo.grid(row=0, column=8, padx=10)
+        self.lbl_costo.bind("<Button-1>", lambda e: self.abrir_costo_estado())
 
         frame_campana = tk.LabelFrame(root, text="Configuración de Envío", padx=5, pady=2, bg=COLOR_PANELES, fg="black", font=("Segoe UI", 9, "bold"))
         # OJO: este bloque se empaqueta más abajo (después del Panel de Control y de Gestión
@@ -1898,6 +1905,12 @@ class WoodToolsApp:
             est = f"OK ({len(row['Telefonos_Validos'])})" if row['Es_Valido'] else "DESCARTADO"
             self.tree.insert("", "end", iid=idx, values=(row['Cliente'], row.get('Tel_Formateado','-'), row.get('Vendedor','-'), row['Zona'], est), tags=(tag,))
         self.lbl_conteo.config(text=f"Regs: {len(self.df_filtrado)}")
+        # Costo estimado en vivo del filtro actual (chats válidos × tarifa de Meta).
+        try:
+            r = self._analizar_base(self.df_filtrado)
+            self.lbl_costo.config(text=f"Válidos: {r['n_destinatarios']}  ·  ≈ US${r['costo']:.2f}")
+        except Exception as _e:
+            mainCode.log_error(f"No se pudo actualizar el costo estimado: {_e}")
 
     def aplicar_filtros(self, e=None):
         if self.df_original.empty: return
@@ -2052,6 +2065,167 @@ class WoodToolsApp:
         self.btn_cancelar.config(state="disabled", text="Cancelando...")
         self.lbl_progreso.config(text="Frenando el proceso... (Terminando cliente actual)", fg="red")
 
+    def _analizar_base(self, df=None, entregados=None, fallidos=None):
+        """Analiza la base (o el filtro actual) y devuelve el resumen con el COSTO estimado.
+        Si se pasan `entregados`/`fallidos` (del historial real del servidor), cruza cada número
+        válido para separar los que YA funcionaron de los que YA fallaron (y no volver a gastar)."""
+        if df is None:
+            df = self.df_filtrado
+        r = {
+            "total_regs": 0,
+            "validos": [], "invalidos_formato": [], "lista_negra_items": [],
+            "n_destinatarios": 0, "costo": 0.0,
+            "ok_previos": [], "fallaron_previos": [], "sin_historial": [],
+            "costo_sin_fallidos": 0.0, "cruzado_nube": False,
+        }
+        if df is None or df.empty:
+            return r
+        r["total_regs"] = len(df)
+        vistos = set()
+        for _, row in df.iterrows():
+            cliente = row.get('Cliente', '')
+            if row.get('Es_Revendedor'):
+                tels = row.get('Telefonos_Raw', []) or row.get('Telefonos_Invalidos', [])
+                r["lista_negra_items"].append((cliente, " | ".join(tels) if tels else "Sin número"))
+                continue
+            if row.get('Es_Valido'):
+                for tel in row.get('Telefonos_Validos', []):
+                    if tel in vistos:
+                        continue
+                    vistos.add(tel)
+                    r["validos"].append((cliente, tel))
+            else:
+                tels = row.get('Telefonos_Invalidos', [])
+                if not tels:
+                    tf = row.get('Tel_Formateado', '')
+                    tels = [tf] if tf and tf != "Sin número" else []
+                for tel in tels:
+                    r["invalidos_formato"].append((cliente, tel))
+        r["n_destinatarios"] = len(r["validos"])
+        r["costo"] = mainCode.calcular_costo_campana(r["n_destinatarios"])
+        if entregados is not None or fallidos is not None:
+            r["cruzado_nube"] = True
+            entregados = entregados or set()
+            fallidos = fallidos or {}
+            for cliente, tel in r["validos"]:
+                k = mainCode.clave_10_digitos(tel)
+                if k in entregados:
+                    r["ok_previos"].append((cliente, tel))
+                elif k in fallidos:
+                    r["fallaron_previos"].append((cliente, tel, fallidos.get(k, {})))
+                else:
+                    r["sin_historial"].append((cliente, tel))
+            n_pag = r["n_destinatarios"] - len(r["fallaron_previos"])
+            r["costo_sin_fallidos"] = mainCode.calcular_costo_campana(n_pag)
+        return r
+
+    def abrir_costo_estado(self):
+        if self.df_filtrado.empty:
+            return messagebox.showinfo("Costo & Estado", "Primero descargá una base de la nube.")
+
+        vent = tk.Toplevel(self.root)
+        vent.title("💵 Costo & Estado de la campaña")
+        vent.geometry("660x640")
+        vent.configure(bg=COLOR_PANELES)
+
+        frame_head = tk.Frame(vent, bg="#00897B")
+        frame_head.pack(fill="x")
+        lbl_costo_big = tk.Label(frame_head, text="≈ US$0.00", font=("Segoe UI", 26, "bold"), bg="#00897B", fg="white")
+        lbl_costo_big.pack(pady=(12, 0))
+        lbl_costo_sub = tk.Label(frame_head, text="", font=("Segoe UI", 10), bg="#00897B", fg="white")
+        lbl_costo_sub.pack(pady=(0, 12))
+
+        txt = tk.Text(vent, wrap="word", padx=12, pady=12, font=("Consolas", 10), height=20)
+        txt.pack(fill="both", expand=True, padx=12, pady=(10, 6))
+
+        frame_btns = tk.Frame(vent, bg=COLOR_PANELES)
+        frame_btns.pack(fill="x", padx=12, pady=8)
+
+        estado = {"resumen": None}
+
+        def pintar(r):
+            estado["resumen"] = r
+            tarifa = mainCode.COSTO_POR_CHAT_USD
+            lbl_costo_big.config(text=f"≈ US${r['costo']:.2f}")
+            lbl_costo_sub.config(text=f"{r['n_destinatarios']} destinatarios válidos × US${tarifa:.2f} por chat de marketing")
+            txt.config(state="normal")
+            txt.delete("1.0", tk.END)
+            L = []
+            L.append(f"Registros en el filtro actual: {r['total_regs']}\n")
+            L.append("─" * 54 + "\n")
+            L.append(f"✅ Números VÁLIDOS (se intentarán):    {r['n_destinatarios']}\n")
+            L.append(f"❌ Formato inválido (se descartan):     {len(r['invalidos_formato'])}\n")
+            L.append(f"🚫 Lista negra (revendedores):          {len(r['lista_negra_items'])}\n")
+            L.append("─" * 54 + "\n")
+            if r["cruzado_nube"]:
+                L.append("HISTORIAL REAL DE META (campañas anteriores):\n")
+                L.append(f"   🟢 Confirmados que YA funcionaron:   {len(r['ok_previos'])}\n")
+                L.append(f"   🔴 Que YA fallaron antes:            {len(r['fallaron_previos'])}\n")
+                L.append(f"   ❔ Sin historial (nunca contactados): {len(r['sin_historial'])}\n")
+                L.append("─" * 54 + "\n")
+                ahorro = r["costo"] - r["costo_sin_fallidos"]
+                L.append(f"💵 Enviando a TODOS los válidos:         US${r['costo']:.2f}\n")
+                L.append(f"💵 EXCLUYENDO los que ya fallaron:       US${r['costo_sin_fallidos']:.2f}\n")
+                if ahorro > 0:
+                    L.append(f"   → Ahorrás US${ahorro:.2f} si no reenviás a los {len(r['fallaron_previos'])} números muertos.\n")
+                if r["fallaron_previos"]:
+                    L.append("\nNúmeros que YA fallaron (conviene no reenviar):\n")
+                    for cliente, tel, info in r["fallaron_previos"][:40]:
+                        motivo = info.get("titulo") or info.get("codigo") or "sin motivo"
+                        L.append(f"   • {cliente}  {tel}  →  {motivo}\n")
+                    if len(r["fallaron_previos"]) > 40:
+                        L.append(f"   ... y {len(r['fallaron_previos']) - 40} más (exportá para verlos todos).\n")
+            else:
+                L.append("Tocá '🔄 Cruzar con historial real (nube)' para saber\n")
+                L.append("cuáles de estos números YA funcionaron y cuáles NO.\n\n")
+                L.append("(Sin cruzar, 'válido' = tiene el formato correcto; eso NO\n")
+                L.append(" garantiza que el número esté activo en WhatsApp.)\n")
+            txt.insert("1.0", "".join(L))
+            txt.config(state="disabled")
+
+        def cruzar_nube():
+            btn_nube.config(state="disabled", text="Consultando...")
+            def _worker():
+                entregados, fallidos = mainCode.obtener_estado_numeros_nube()
+                r = self._analizar_base(self.df_filtrado, entregados=entregados, fallidos=fallidos)
+                def _fin():
+                    pintar(r)
+                    btn_nube.config(state="normal", text="🔄 Cruzar con historial real (nube)")
+                    if not entregados and not fallidos:
+                        messagebox.showwarning("Sin datos",
+                            "El servidor no devolvió historial todavía.\n(Puede ser que falte el deploy del servidor o que aún no haya campañas registradas.)",
+                            parent=vent)
+                self.root.after(0, _fin)
+            threading.Thread(target=_worker, daemon=True).start()
+
+        def exportar_no_funcionan():
+            r = estado["resumen"] or self._analizar_base(self.df_filtrado)
+            filas = []
+            for cliente, tel in r["invalidos_formato"]:
+                filas.append({"Cliente": cliente, "Número": tel, "Motivo": "Formato inválido"})
+            for cliente, tels in r["lista_negra_items"]:
+                filas.append({"Cliente": cliente, "Número": tels, "Motivo": "Lista negra (revendedor)"})
+            for cliente, tel, info in r.get("fallaron_previos", []):
+                motivo = info.get("titulo") or info.get("codigo") or "Falló en Meta"
+                filas.append({"Cliente": cliente, "Número": tel, "Motivo": f"Ya falló antes: {motivo}"})
+            if not filas:
+                return messagebox.showinfo("Exportar", "No hay números 'que no funcionan' para exportar en este filtro.", parent=vent)
+            ruta = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")],
+                title="Guardar 'No funcionan'", initialfile=f"No_Funcionan_WoodTools_{datetime.now().strftime('%Y%m%d')}.xlsx")
+            if ruta:
+                try:
+                    pd.DataFrame(filas).to_excel(ruta, index=False)
+                    messagebox.showinfo("Éxito", f"Exportado ({len(filas)} números).\n\n{ruta}", parent=vent)
+                except Exception as e:
+                    messagebox.showerror("Error", f"No se pudo guardar:\n{e}", parent=vent)
+
+        btn_nube = tk.Button(frame_btns, text="🔄 Cruzar con historial real (nube)", command=cruzar_nube, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
+        btn_nube.pack(side="left", padx=5)
+        tk.Button(frame_btns, text="📥 Exportar 'No funcionan'", command=exportar_no_funcionan, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
+        tk.Button(frame_btns, text="✖ Cerrar", command=vent.destroy, bg="#9E9E9E", fg="white", font=("Segoe UI", 10, "bold")).pack(side="right", padx=5)
+
+        pintar(self._analizar_base(self.df_filtrado))
+
     def iniciar_envio(self):
         df_ok = self.df_filtrado[self.df_filtrado['Es_Valido'] == True]
         if df_ok.empty: return messagebox.showwarning("Error", "No hay destinatarios válidos en la lista actual.")
@@ -2110,7 +2284,17 @@ class WoodToolsApp:
             if not self.text_dinamico_multilinea.get("1.0", tk.END).strip(): return messagebox.showerror("Error", "Texto obligatorio.")
             params['texto_extra'] = self.text_dinamico_multilinea.get("1.0", tk.END).strip()
 
-        if not messagebox.askyesno("Confirmar Envío", f"Revisá la Vista Previa a la derecha.\n\n¿Estás seguro que deseas disparar la campaña a {len(df_ok)} destinatarios?"): return
+        resumen_envio = self._analizar_base(df_ok)
+        n_chats = resumen_envio["n_destinatarios"]
+        costo = resumen_envio["costo"]
+        msg_conf = (
+            f"Revisá la Vista Previa a la derecha.\n\n"
+            f"Se enviará a {n_chats} números válidos ({len(df_ok)} clientes).\n"
+            f"💵 Costo estimado: ≈ US${costo:.2f}  (US${mainCode.COSTO_POR_CHAT_USD:.2f} por chat de marketing)\n\n"
+            f"💡 Tip: abrí '💵 Costo & Estado' para ver cuáles ya fallaron antes y no gastar de nuevo en ellos.\n\n"
+            f"¿Confirmás el envío?"
+        )
+        if not messagebox.askyesno("Confirmar Envío", msg_conf): return
         
         self.cancelar_envio = False
         self.btn_enviar.config(state="disabled")

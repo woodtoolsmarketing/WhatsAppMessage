@@ -27,7 +27,7 @@ BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 
 # Versión de esta app y repo público desde donde se descargan las actualizaciones
-VERSION_APP = "12.7"
+VERSION_APP = "12.8"
 GITHUB_REPO = "woodtoolsmarketing/WhatsAppMessage"
 
 NOMBRE_HOJA = "Base de datos wt"
@@ -302,6 +302,40 @@ def validar_formato_numero(numero_raw):
     # validación y Meta devolvía como "no entregable".
     if re.match(r'^549[123]\d{9}$', numero_fmt): return True, numero_fmt
     return False, numero_fmt
+
+# ==========================================
+# COSTO DE CAMPAÑA + CRUCE CON HISTORIAL REAL DE META
+# ==========================================
+# Meta cobra una "conversación de marketing" por destinatario (ventana de 24 h). Este es el
+# valor aproximado por chat en USD; se ajusta acá si Meta cambia la tarifa de Argentina.
+COSTO_POR_CHAT_USD = 0.06
+
+def calcular_costo_campana(cantidad_chats):
+    """Costo estimado en USD de enviar a `cantidad_chats` destinatarios (1 conversación c/u)."""
+    try:
+        return round(max(0, int(cantidad_chats)) * COSTO_POR_CHAT_USD, 2)
+    except Exception:
+        return 0.0
+
+def clave_10_digitos(numero):
+    """Últimos 10 dígitos de un número: la clave para cruzarlo con el historial del servidor."""
+    d = ''.join(filter(str.isdigit, str(numero)))
+    return d[-10:] if len(d) >= 10 else d
+
+def obtener_estado_numeros_nube(timeout=30):
+    """Cruza contra el HISTORIAL REAL de Meta guardado en el servidor (endpoint /numeros_estado).
+    Devuelve (entregados, fallidos):
+      - entregados: set con los últimos 10 dígitos de los números que YA se entregaron/leyeron.
+      - fallidos: dict {ultimos_10: {'codigo':..., 'titulo':...}} de los que Meta NO pudo entregar.
+    Si el servidor no responde, devuelve (set(), {}) sin romper la app."""
+    try:
+        res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/numeros_estado", timeout=timeout)
+        if res.status_code == 200:
+            data = res.json() or {}
+            return set(data.get("entregados", []) or []), (data.get("fallidos", {}) or {})
+    except Exception as e:
+        log_error(f"No se pudo consultar /numeros_estado: {e}")
+    return set(), {}
 
 # ==========================================
 # LISTA NEGRA: FILTRO SÚPER AGRESIVO (Sufijos)
