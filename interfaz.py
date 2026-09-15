@@ -84,38 +84,42 @@ class WoodToolsApp:
         frame_top.pack(fill="x")
         self.cargar_logo_con_ovalo(frame_top)
 
-        btn_cargar = tk.Button(frame_top, text="☁️ Descargar Base de la Nube", command=self.abrir_selector_bases, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_cargar.pack(side=tk.LEFT, padx=10)
-        
-        btn_verificar = tk.Button(frame_top, text="🔍 Descartes", command=self.verificar_observados, bg="#FF9800", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_verificar.pack(side=tk.LEFT, padx=10)
+        # Estado del BOT: se arma PRIMERO y se ancla a la derecha (al lado del logo) para que
+        # SIEMPRE quede visible. Antes, con muchos botones largos, quedaba tapado.
+        self.frame_bot_control = tk.Frame(frame_top, bg="white", padx=8, pady=1, highlightbackground="#ccc", highlightthickness=1)
+        self.frame_bot_control.pack(side=tk.RIGHT, padx=8)
 
-        btn_costo = tk.Button(frame_top, text="💵 Costo & Estado", command=self.abrir_costo_estado, bg="#00897B", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_costo.pack(side=tk.LEFT, padx=10)
-        
-        btn_reporte = tk.Button(frame_top, text="📊 Exportar Reporte", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_reporte.pack(side=tk.LEFT, padx=10)
-        
-        btn_derivados = tk.Button(frame_top, text="💬 Chats Pendientes", command=self.abrir_chats_derivados, bg="#9C27B0", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_derivados.pack(side=tk.LEFT, padx=10)
-
-        btn_contactos = tk.Button(frame_top, text="📇 Exportar Contactos", command=self.exportar_contactos, bg="#607D8B", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_contactos.pack(side=tk.LEFT, padx=10)
-
-        self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 9, "bold"))
-        self.lbl_status_db.pack(side=tk.LEFT, padx=10)
-
-        self.frame_bot_control = tk.Frame(frame_top, bg="white", padx=10, pady=2, highlightbackground="#ccc", highlightthickness=1)
-        self.frame_bot_control.pack(side=tk.RIGHT, padx=20)
-        
-        self.lbl_bot_titulo = tk.Label(self.frame_bot_control, text="BOT INTELIGENTE", font=("Segoe UI", 8, "bold"), bg="white", fg="gray")
+        self.lbl_bot_titulo = tk.Label(self.frame_bot_control, text="BOT", font=("Segoe UI", 7, "bold"), bg="white", fg="gray")
         self.lbl_bot_titulo.pack()
-        
-        self.lbl_bot_estado = tk.Label(self.frame_bot_control, text="CONECTANDO...", font=("Segoe UI", 10, "bold"), bg="white", fg="orange")
+
+        self.lbl_bot_estado = tk.Label(self.frame_bot_control, text="CONECTANDO...", font=("Segoe UI", 9, "bold"), bg="white", fg="orange")
         self.lbl_bot_estado.pack()
-        
+
         self.btn_toggle_bot = tk.Button(self.frame_bot_control, text="Cargando...", command=self.click_toggle_bot, font=("Segoe UI", 8), bg="#eee", relief="groove")
-        self.btn_toggle_bot.pack(pady=2)
+        self.btn_toggle_bot.pack(pady=1)
+
+        # Botonera compacta: etiquetas cortas y poco padding para que entre todo sin tapar el bot.
+        _bfont = ("Segoe UI", 9, "bold")
+        btn_cargar = tk.Button(frame_top, text="☁️ Base", command=self.abrir_selector_bases, bg="#4CAF50", fg="white", font=_bfont)
+        btn_cargar.pack(side=tk.LEFT, padx=4)
+
+        btn_verificar = tk.Button(frame_top, text="🔍 Descartes", command=self.verificar_observados, bg="#FF9800", fg="white", font=_bfont)
+        btn_verificar.pack(side=tk.LEFT, padx=4)
+
+        btn_costo = tk.Button(frame_top, text="💵 Costo", command=self.abrir_costo_estado, bg="#00897B", fg="white", font=_bfont)
+        btn_costo.pack(side=tk.LEFT, padx=4)
+
+        btn_reporte = tk.Button(frame_top, text="📊 Reporte", command=self.abrir_ventana_exportacion, bg="#2196F3", fg="white", font=_bfont)
+        btn_reporte.pack(side=tk.LEFT, padx=4)
+
+        btn_derivados = tk.Button(frame_top, text="💬 Chats", command=self.abrir_chats_derivados, bg="#9C27B0", fg="white", font=_bfont)
+        btn_derivados.pack(side=tk.LEFT, padx=4)
+
+        btn_contactos = tk.Button(frame_top, text="📇 Contactos", command=self.exportar_contactos, bg="#607D8B", fg="white", font=_bfont)
+        btn_contactos.pack(side=tk.LEFT, padx=4)
+
+        self.lbl_status_db = tk.Label(frame_top, text="Esperando datos...", fg="white", bg=COLOR_ROJO_WT, font=("Segoe UI", 8, "bold"))
+        self.lbl_status_db.pack(side=tk.LEFT, padx=8)
         
         self.config_bot_actual = "AUTO"
 
@@ -274,7 +278,7 @@ class WoodToolsApp:
                 ovalo_w = new_w + 30
                 ovalo_h = h_deseado + 10
                 canvas = tk.Canvas(parent, width=ovalo_w, height=ovalo_h, bg=COLOR_ROJO_WT, highlightthickness=0)
-                canvas.pack(side=tk.RIGHT, padx=15)
+                canvas.pack(side=tk.RIGHT, padx=8)
                 canvas.create_oval(2, 2, ovalo_w-2, ovalo_h-2, fill=COLOR_PANELES, outline=COLOR_PANELES)
                 canvas.create_image(ovalo_w/2, ovalo_h/2, image=self.logo_img)
             except Exception as e: print(f"Error cargando logo: {e}")
@@ -1521,8 +1525,53 @@ class WoodToolsApp:
                 except Exception as e:
                     messagebox.showerror("Error", f"No se pudo guardar el archivo:\n{e}", parent=vent)
 
-        btn_exportar = tk.Button(vent, text="📥 Exportar listado para contactar", command=exportar_descartes_excel, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold"))
-        btn_exportar.pack(pady=10)
+        def guardar_en_historial():
+            items = []
+            for row in por_numero:
+                for tel in (row.get('Telefonos_Invalidos', []) or row.get('Telefonos_Raw', [])):
+                    if str(tel).strip():
+                        items.append({
+                            "codigo_cliente": str(row.get('Código de cliente', '')),
+                            "cliente": str(row['Cliente']),
+                            "numero_original": str(tel),
+                            "motivo": "Número inválido (ninguna variante sirvió)",
+                            "origen": getattr(self, 'tipo_base_actual', '') or 'carga',
+                        })
+            if not items:
+                return messagebox.showinfo("Historial", "No hay rechazados por número para guardar.", parent=vent)
+            def _worker():
+                n = mainCode.guardar_contactos_invalidos_nube(items)
+                self.root.after(0, lambda: messagebox.showinfo("Historial",
+                    f"Se guardaron/actualizaron {n} contactos en el historial del servidor.", parent=vent))
+            threading.Thread(target=_worker, daemon=True).start()
+
+        def ver_historial_servidor():
+            def _worker():
+                data = mainCode.obtener_contactos_invalidos_nube()
+                def _fin():
+                    if not data:
+                        return messagebox.showinfo("Historial", "El historial del servidor está vacío (todavía no se guardó ningún inválido).", parent=vent)
+                    ruta = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")],
+                        title="Guardar historial de no válidos (servidor)",
+                        initialfile=f"Historial_NoValidos_WoodTools_{datetime.now().strftime('%Y%m%d')}.xlsx")
+                    if not ruta:
+                        return
+                    filas = [{"Código de cliente": d.get("codigo_cliente", ""), "Cliente": d.get("cliente", ""),
+                              "Número": d.get("numero", ""), "Motivo": d.get("motivo", ""),
+                              "Origen": d.get("origen", ""), "Fecha": d.get("fecha", "")} for d in data]
+                    try:
+                        pd.DataFrame(filas).to_excel(ruta, index=False)
+                        messagebox.showinfo("Historial", f"Historial exportado ({len(filas)} contactos acumulados).\n\n{ruta}", parent=vent)
+                    except Exception as e:
+                        messagebox.showerror("Error", f"No se pudo guardar:\n{e}", parent=vent)
+                self.root.after(0, _fin)
+            threading.Thread(target=_worker, daemon=True).start()
+
+        frame_btns_desc = tk.Frame(vent, bg=COLOR_PANELES)
+        frame_btns_desc.pack(pady=10)
+        tk.Button(frame_btns_desc, text="📥 Exportar (este filtro)", command=exportar_descartes_excel, bg="#4CAF50", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
+        tk.Button(frame_btns_desc, text="☁️ Guardar en historial", command=guardar_en_historial, bg="#00897B", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
+        tk.Button(frame_btns_desc, text="📋 Ver/Exportar historial (servidor)", command=ver_historial_servidor, bg="#2196F3", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
 
     def actualizar_preview(self, event=None):
         tipo = self.tipo_mensaje_var.get()
@@ -1908,7 +1957,11 @@ class WoodToolsApp:
             df['Fav_Temp'] = "Sierras"; df['Sec_Temp'] = "Cuchillas"
         
         self.df_original = df; self.df_filtrado = df.copy()
-        
+
+        # Guardado automático (en segundo plano) de los números inválidos en el historial del
+        # servidor, para ir juntando los contactos a los que hay que pedirles el número correcto.
+        threading.Thread(target=self._auto_guardar_invalidos_nube, args=(df.copy(),), daemon=True).start()
+
         self.root.after(0, self.actualizar_tabla)
         zonas_unicas = ["Todas"] + sorted(df['Zona'].unique().tolist())
         self.root.after(0, lambda: self.combo_zona.config(values=zonas_unicas))
@@ -1916,7 +1969,7 @@ class WoodToolsApp:
         herramientas = ["Todos"] + mainCode.identificar_cols_productos(df)
         self.root.after(0, lambda: self.combo_herramientas.config(values=herramientas))
         self.root.after(0, lambda: self.combo_herramientas.current(0))
-        self.root.after(0, lambda: self.lbl_status_db.config(text=f"Cargado: {len(df)} registros de {tipo}", fg="white", bg=COLOR_ROJO_WT))
+        self.root.after(0, lambda: self.lbl_status_db.config(text=f"{len(df)} regs · {tipo}", fg="white", bg=COLOR_ROJO_WT))
 
     def actualizar_tabla(self):
         if "prospecto" in self.tipo_base_actual.lower():
@@ -2092,6 +2145,40 @@ class WoodToolsApp:
         self.btn_cancelar.config(state="disabled", text="Cancelando...")
         self.lbl_progreso.config(text="Frenando el proceso... (Terminando cliente actual)", fg="red")
 
+    def _recolectar_invalidos(self, df):
+        """Arma la lista de contactos con número NO válido (para el historial del servidor):
+        cliente + código + número como vino. No incluye la lista negra (revendedores)."""
+        items = []
+        origen = getattr(self, 'tipo_base_actual', '') or 'carga'
+        if df is None or df.empty:
+            return items
+        for _, row in df.iterrows():
+            if row.get('Es_Valido') or row.get('Es_Revendedor'):
+                continue
+            codigo = row.get('Código de cliente', '')
+            cliente = row.get('Cliente', '')
+            tels = row.get('Telefonos_Invalidos', []) or row.get('Telefonos_Raw', [])
+            for tel in tels:
+                if not str(tel).strip():
+                    continue
+                items.append({
+                    "codigo_cliente": str(codigo), "cliente": str(cliente),
+                    "numero_original": str(tel),
+                    "motivo": "Número inválido (ninguna variante sirvió)",
+                    "origen": str(origen),
+                })
+        return items
+
+    def _auto_guardar_invalidos_nube(self, df):
+        """En segundo plano: manda al servidor los inválidos de la base recién cargada, para que
+        se vayan acumulando en el historial durable sin que el usuario tenga que hacer nada."""
+        try:
+            items = self._recolectar_invalidos(df)
+            if items:
+                mainCode.guardar_contactos_invalidos_nube(items)
+        except Exception as e:
+            mainCode.log_error(f"Auto-guardado de inválidos falló: {e}")
+
     def _analizar_base(self, df=None, entregados=None, fallidos=None):
         """Analiza la base (o el filtro actual) y devuelve el resumen con el COSTO estimado.
         Si se pasan `entregados`/`fallidos` (del historial real del servidor), cruza cada número
@@ -2216,6 +2303,15 @@ class WoodToolsApp:
             def _worker():
                 entregados, fallidos = mainCode.obtener_estado_numeros_nube()
                 r = self._analizar_base(self.df_filtrado, entregados=entregados, fallidos=fallidos)
+                # Guardamos los "no está en WhatsApp" (con su cliente) en el historial durable.
+                if r.get("fallaron_previos"):
+                    inval = [{
+                        "codigo_cliente": str(cod), "cliente": str(cli), "numero_original": str(tel),
+                        "motivo": f"No está en WhatsApp: {(info.get('titulo') or info.get('codigo') or '')}".strip(),
+                        "origen": "cruce-nube",
+                    } for cod, cli, tel, info in r["fallaron_previos"]]
+                    try: mainCode.guardar_contactos_invalidos_nube(inval)
+                    except Exception as e: mainCode.log_error(f"No se pudo guardar fallidos en historial: {e}")
                 def _fin():
                     pintar(r)
                     btn_nube.config(state="normal", text="🔄 Cruzar con historial real (nube)")

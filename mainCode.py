@@ -27,7 +27,7 @@ BASE_URL = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}"
 URL_SERVIDOR_RENDER = "https://woodtools-webhook.onrender.com"
 
 # Versión de esta app y repo público desde donde se descargan las actualizaciones
-VERSION_APP = "12.9"
+VERSION_APP = "12.11"
 GITHUB_REPO = "woodtoolsmarketing/WhatsAppMessage"
 
 NOMBRE_HOJA = "Base de datos wt"
@@ -372,6 +372,32 @@ def obtener_estado_numeros_nube(timeout=30):
     except Exception as e:
         log_error(f"No se pudo consultar /numeros_estado: {e}")
     return set(), {}
+
+def guardar_contactos_invalidos_nube(contactos, timeout=30):
+    """Manda al servidor los contactos con número no válido/inexistente (con su cliente) para
+    guardarlos en el historial durable. `contactos` = lista de dicts
+    {codigo_cliente, cliente, numero_original, motivo, origen}. Devuelve cuántos se guardaron."""
+    if not contactos:
+        return 0
+    try:
+        res = requests.post(f"{URL_SERVIDOR_RENDER.rstrip('/')}/contactos_invalidos",
+                            json={"contactos": contactos}, timeout=timeout)
+        if res.status_code == 200:
+            return (res.json() or {}).get("guardados", 0)
+    except Exception as e:
+        log_error(f"No se pudo guardar contactos_invalidos: {e}")
+    return 0
+
+def obtener_contactos_invalidos_nube(timeout=30):
+    """Trae el historial durable de contactos no válidos/inexistentes desde el servidor.
+    Lista de dicts {codigo_cliente, cliente, numero, motivo, origen, fecha}."""
+    try:
+        res = requests.get(f"{URL_SERVIDOR_RENDER.rstrip('/')}/contactos_invalidos", timeout=timeout)
+        if res.status_code == 200:
+            return res.json() or []
+    except Exception as e:
+        log_error(f"No se pudo obtener contactos_invalidos: {e}")
+    return []
 
 # ==========================================
 # LISTA NEGRA: FILTRO SÚPER AGRESIVO (Sufijos)
