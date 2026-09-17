@@ -1328,6 +1328,7 @@ class WoodToolsApp:
         self.datos_chats_actuales = []
         self.datos_abandonados = []
         self.datos_agendados = []
+        self.datos_no_respondio = []
         self.vista_actual = "pendientes"
         self.lista_indices_map = {}
 
@@ -1363,6 +1364,18 @@ class WoodToolsApp:
                     lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
                     self.lista_indices_map[idx_lb] = real_idx
                     idx_lb += 1
+                # Sección aparte: recibieron la campaña y nunca respondieron (para seguirlos).
+                if self.datos_no_respondio:
+                    lista_chats.insert(tk.END, "📵 NO RESPONDIÓ (campaña):")
+                    lista_chats.itemconfig(idx_lb, {'fg': 'white', 'bg': '#607D8B'})
+                    idx_lb += 1
+                    for real_idx, d in self.datos_no_respondio:
+                        nombre_vendedor = d.get('vendedor', 'Sin asigna')
+                        for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                            if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
+                        lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
+                        self.lista_indices_map[idx_lb] = real_idx
+                        idx_lb += 1
             else:
                 lista_chats.insert(tk.END, "📅 CONTACTAR EL DÍA:")
                 lista_chats.itemconfig(0, {'fg': 'white', 'bg': '#2196F3'})
@@ -1396,8 +1409,13 @@ class WoodToolsApp:
             self.datos_chats_actuales = datos_crudos
             self.datos_abandonados = []
             self.datos_agendados = []
-            
+            self.datos_no_respondio = []
+
             for idx_data, d in enumerate(datos_crudos):
+                # Recibió la campaña y nunca escribió: va a su propia sección "No respondió".
+                if d.get('estado') == 'no_respondio':
+                    self.datos_no_respondio.append((idx_data, d))
+                    continue
                 hist_str = json.dumps(d.get('historial', []))
                 agendado_match = re.search(r'\[AGENDADO:\s*(.*?)\]', hist_str, re.IGNORECASE)
                 if agendado_match:
@@ -1421,11 +1439,16 @@ class WoodToolsApp:
             chat_data = self.datos_chats_actuales[real_idx]
             
             # Pinta el chat mostrando las fotos que mandó el cliente (no el marcador de texto)
+            if chat_data.get('estado') == 'no_respondio':
+                encabezado = f"📵 Recibió la campaña y NO respondió · {chat_data.get('fecha', '')}"
+            else:
+                encabezado = f"Fecha de derivación: {chat_data.get('fecha', '')}"
             self._pintar_historial(txt_chat, chat_data.get('historial', []),
                                    telefono=chat_data.get('telefono', ''),
-                                   fecha=f"Fecha de derivación: {chat_data.get('fecha', '')}")
+                                   fecha=encabezado)
             btn_resuelto.config(state="normal")
-            btn_aprender_chat.config(state="normal")
+            # Un 'no_respondio' no tiene conversación para enseñarle nada al bot.
+            btn_aprender_chat.config(state="disabled" if chat_data.get('estado') == 'no_respondio' else "normal")
 
         lista_chats.bind("<<ListboxSelect>>", mostrar_chat)
 
