@@ -1329,6 +1329,7 @@ class WoodToolsApp:
         self.datos_abandonados = []
         self.datos_agendados = []
         self.datos_no_respondio = []
+        self.datos_derivados = []
         self.vista_actual = "pendientes"
         self.lista_indices_map = {}
 
@@ -1354,16 +1355,31 @@ class WoodToolsApp:
             btn_resuelto.config(state="disabled")
             
             if self.vista_actual == "pendientes":
-                lista_chats.insert(tk.END, "🕰️ ABANDONADOS:")
-                lista_chats.itemconfig(0, {'fg': 'white', 'bg': '#FF9800'})
-                idx_lb = 1
-                for real_idx, d in self.datos_abandonados:
-                    nombre_vendedor = d.get('vendedor', 'Sin asigna')
-                    for nombre, numeros in mainCode.DB_VENDEDORES.items():
-                        if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
-                    lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
-                    self.lista_indices_map[idx_lb] = real_idx
+                idx_lb = 0
+                # DERIVADOS: el bot ya les pasó el link al vendedor. Se muestran al instante (antes
+                # solo aparecían al archivarse por inactividad a las 72h).
+                if self.datos_derivados:
+                    lista_chats.insert(tk.END, "💬 DERIVADOS AL VENDEDOR:")
+                    lista_chats.itemconfig(idx_lb, {'fg': 'white', 'bg': '#9C27B0'})
                     idx_lb += 1
+                    for real_idx, d in self.datos_derivados:
+                        nombre_vendedor = d.get('vendedor', 'Sin asigna')
+                        for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                            if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
+                        lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
+                        self.lista_indices_map[idx_lb] = real_idx
+                        idx_lb += 1
+                if self.datos_abandonados:
+                    lista_chats.insert(tk.END, "🕰️ ABANDONADOS:")
+                    lista_chats.itemconfig(idx_lb, {'fg': 'white', 'bg': '#FF9800'})
+                    idx_lb += 1
+                    for real_idx, d in self.datos_abandonados:
+                        nombre_vendedor = d.get('vendedor', 'Sin asigna')
+                        for nombre, numeros in mainCode.DB_VENDEDORES.items():
+                            if d.get('vendedor') in numeros: nombre_vendedor = nombre; break
+                        lista_chats.insert(tk.END, f"  +{d['telefono']} ({nombre_vendedor})")
+                        self.lista_indices_map[idx_lb] = real_idx
+                        idx_lb += 1
                 # Sección aparte: recibieron la campaña y nunca respondieron (para seguirlos).
                 if self.datos_no_respondio:
                     lista_chats.insert(tk.END, "📵 NO RESPONDIÓ (campaña):")
@@ -1410,6 +1426,7 @@ class WoodToolsApp:
             self.datos_abandonados = []
             self.datos_agendados = []
             self.datos_no_respondio = []
+            self.datos_derivados = []
 
             for idx_data, d in enumerate(datos_crudos):
                 # Recibió la campaña y nunca escribió: va a su propia sección "No respondió".
@@ -1421,6 +1438,9 @@ class WoodToolsApp:
                 if agendado_match:
                     info_agendado = agendado_match.group(1)
                     self.datos_agendados.append((idx_data, d, info_agendado))
+                elif d.get('estado') == 'derivado':
+                    # El bot le pasó el link al vendedor: sección "Derivados al vendedor".
+                    self.datos_derivados.append((idx_data, d))
                 else:
                     self.datos_abandonados.append((idx_data, d))
                     
